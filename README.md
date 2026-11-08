@@ -152,8 +152,12 @@ pulsecheck/
 
 ## Project Status
 
-**Working MVP — production build verified locally.**
+**Working MVP — successfully deployed on Vercel.**
 
-The main classroom, Pulse, student submission, results, and teacher authorization workflows have been implemented and manually tested.
+The main classroom, Pulse management, student submission,
+live results, and teacher authorization workflows have been
+implemented and manually tested locally and in production.
 
-Public deployment has not yet been verified.
+The application is deployed at:
+
+https://pulsecheck-beta.vercel.app/
