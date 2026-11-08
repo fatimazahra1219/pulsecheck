@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, type FormEvent } from "react";
+import Link from "next/link";
 
 type Session = {
   code: string;
@@ -455,554 +456,468 @@ export default function Home() {
   }, [sessionCode, pulseRefresh]);
 
   return (
-    <main className="min-h-screen bg-slate-50 text-slate-900">
+    <main className="min-h-screen bg-[#f6f6fb] text-slate-900 antialiased">
       {/* Header */}
-      <header className="border-b border-slate-200 bg-white">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-600 text-white">
-              <span className="text-xl font-bold">P</span>
-            </div>
+      <header className="sticky top-0 z-30 border-b border-slate-200/70 bg-white/80 backdrop-blur-xl">
+        <div className="mx-auto flex max-w-[1400px] items-center justify-between px-4 py-3 sm:px-8">
+          <Link href="/" className="flex items-center gap-3">
+            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-600 text-white shadow-md shadow-indigo-600/25">
+              <svg
+                viewBox="0 0 24 24"
+                className="h-5 w-5"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.4"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M3 12h4l2.5-6 5 12 2.5-6h4" />
+              </svg>
+            </span>
+            <span className="text-lg font-extrabold tracking-tight">
+              PulseCheck
+            </span>
+          </Link>
 
-            <div>
-              <h1 className="text-lg font-bold">PulseCheck</h1>
-              <p className="text-xs text-slate-500">
-                Classroom feedback platform
-              </p>
-            </div>
-          </div>
-
-          <span className="rounded-full bg-blue-50 px-3 py-1.5 text-sm font-medium text-blue-700">
-            Teacher dashboard
-          </span>
+          <Link
+            href="/join"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-indigo-300 hover:text-indigo-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
+          >
+            Preview student view ↗
+          </Link>
         </div>
       </header>
 
-      <div className="mx-auto max-w-6xl px-6 py-12">
-        {/* Page introduction */}
-        <section>
-          <p className="mb-2 text-sm font-semibold text-blue-600">
-            YOUR CLASSROOM
-          </p>
+      <div className="mx-auto grid max-w-[1400px] gap-6 px-4 py-6 sm:px-8 sm:py-8 lg:grid-cols-[340px_minmax(0,1fr)]">
+        {/* ---------- Sidebar ---------- */}
+        <aside className="space-y-5 lg:sticky lg:top-24 lg:self-start">
+          {/* Create classroom */}
+          <section className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200/70">
+            <h2 className="text-base font-bold">New classroom</h2>
+            <p className="mt-1 text-sm text-slate-500">
+              Name your lesson and get a code for your students.
+            </p>
 
-          <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">
-            Understand your students better.
-          </h2>
+            <form onSubmit={handleSubmit} className="mt-4 space-y-3">
+              <label htmlFor="topic" className="sr-only">
+                Lesson topic
+              </label>
+              <input
+                id="topic"
+                type="text"
+                value={topic}
+                onChange={(event) => setTopic(event.target.value)}
+                placeholder="e.g. JavaScript array methods"
+                maxLength={100}
+                required
+                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition placeholder:text-slate-400 focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-100"
+              />
 
-          <p className="mt-3 max-w-xl leading-7 text-slate-500">
-            Create a session, share its code with your students, and discover
-            how well they understand your lesson.
-          </p>
-        </section>
+              {error && (
+                <p
+                  role="alert"
+                  className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700"
+                >
+                  {error}
+                </p>
+              )}
 
-        {/* Create session */}
-        <section className="mt-10 max-w-2xl rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-          <h3 className="text-lg font-bold">Create a new session</h3>
+              <button
+                type="submit"
+                disabled={loading || !topic.trim()}
+                className="w-full rounded-xl bg-indigo-600 px-5 py-3 text-sm font-bold text-white shadow-sm shadow-indigo-600/30 transition hover:bg-indigo-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {loading ? "Creating..." : "Create classroom"}
+              </button>
+            </form>
+          </section>
 
-          <p className="mt-1 text-sm text-slate-500">
-            Enter the topic you&apos;re teaching.
-          </p>
+          {/* Classroom list */}
+          <section className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200/70">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <h2 className="text-base font-bold">My classrooms</h2>
+                <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-600">
+                  {sessions.length}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setHistoryRefresh((current) => current + 1)}
+                disabled={historyLoading}
+                aria-label="Refresh classrooms"
+                className="flex h-8 w-8 items-center justify-center rounded-full text-slate-500 transition hover:bg-slate-100 hover:text-indigo-700 disabled:opacity-50"
+              >
+                <span
+                  aria-hidden="true"
+                  className={historyLoading ? "animate-spin" : ""}
+                >
+                  ↻
+                </span>
+              </button>
+            </div>
 
-          <form onSubmit={handleSubmit} className="mt-6">
-            <label htmlFor="topic" className="mb-2 block text-sm font-semibold">
-              Lesson topic
-            </label>
-
-            <input
-              id="topic"
-              type="text"
-              value={topic}
-              onChange={(event) => setTopic(event.target.value)}
-              placeholder="e.g. JavaScript - Array Methods"
-              maxLength={100}
-              required
-              className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
-            />
-
-            {error && (
-              <p role="alert" className="mt-3 text-sm text-red-600">
-                {error}
+            {historyError && (
+              <p
+                role="alert"
+                className="mt-4 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700"
+              >
+                {historyError}
               </p>
             )}
 
-            <button
-              type="submit"
-              disabled={loading || !topic.trim()}
-              className="mt-5 w-full rounded-xl bg-blue-600 px-5 py-3 font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {loading ? "Creating session..." : "Create session"}
-            </button>
-          </form>
-        </section>
+            {historyLoading && sessions.length === 0 ? (
+              <div className="mt-4 space-y-2" aria-hidden="true">
+                {[0, 1, 2].map((item) => (
+                  <div
+                    key={item}
+                    className="h-16 animate-pulse rounded-xl bg-slate-100"
+                  />
+                ))}
+              </div>
+            ) : sessions.length === 0 ? (
+              <div className="mt-4 rounded-xl border border-dashed border-slate-300 px-4 py-8 text-center">
+                <p className="text-2xl" aria-hidden="true">
+                  🎒
+                </p>
+                <p className="mt-2 text-sm font-semibold text-slate-700">
+                  No classrooms yet
+                </p>
+                <p className="mt-1 text-sm text-slate-500">
+                  Create your first one above to get started.
+                </p>
+              </div>
+            ) : (
+              <ul className="mt-4 max-h-[420px] space-y-2 overflow-y-auto pr-1">
+                {sessions.map((item) => {
+                  const selected = sessionCode === item.code;
 
-        {/* Previous classroom sessions */}
-        <section className="mt-10 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <h3 className="text-xl font-bold">My classroom sessions</h3>
+                  return (
+                    <li key={item.code}>
+                      <button
+                        type="button"
+                        aria-pressed={selected}
+                        onClick={() =>
+                          setSession({
+                            code: item.code,
+                            topic: item.topic,
+                            isActive: item.isActive,
+                          })
+                        }
+                        className={`group w-full rounded-xl p-3.5 text-left transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-600 ${
+                          selected
+                            ? "bg-indigo-50 ring-2 ring-indigo-500"
+                            : "ring-1 ring-slate-200 hover:bg-slate-50 hover:ring-indigo-300"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="truncate text-sm font-bold text-slate-900">
+                            {item.topic}
+                          </span>
+                          <span
+                            className={`inline-flex shrink-0 items-center gap-1.5 text-xs font-semibold ${
+                              item.isActive
+                                ? "text-emerald-700"
+                                : "text-slate-500"
+                            }`}
+                          >
+                            <span
+                              className={`h-2 w-2 rounded-full ${
+                                item.isActive
+                                  ? "bg-emerald-500"
+                                  : "bg-slate-300"
+                              }`}
+                            />
+                            {item.isActive ? "Live" : "Ended"}
+                          </span>
+                        </div>
+                        <div className="mt-2 flex items-center justify-between text-xs text-slate-500">
+                          <span className="font-mono font-semibold tracking-widest text-slate-600">
+                            {item.code}
+                          </span>
+                          <span>
+                            {item.totalResponses}{" "}
+                            {item.totalResponses === 1
+                              ? "response"
+                              : "responses"}
+                          </span>
+                        </div>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </section>
+        </aside>
 
-              <p className="mt-1 text-sm text-slate-500">
-                Review your previous lessons and results.
+        {/* ---------- Main workspace ---------- */}
+        <div className="min-w-0 space-y-6">
+          {!session ? (
+            /* Welcome state */
+            <section className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-slate-200/70 sm:p-10">
+              <h1 className="max-w-2xl text-3xl font-extrabold leading-tight tracking-tight text-slate-950 sm:text-5xl">
+                Know what your students understand, while you are still
+                teaching.
+              </h1>
+              <p className="mt-4 max-w-xl text-base leading-7 text-slate-500">
+                Students can share their understanding without entering their
+                names, making it easier to express when they need help. Pick a
+                classroom on the left or create a new one to begin.
               </p>
-            </div>
 
-            <button
-              type="button"
-              onClick={() => setHistoryRefresh((current) => current + 1)}
-              className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium hover:bg-slate-50"
-            >
-              Refresh
-            </button>
-          </div>
-
-          {historyError && (
-            <p role="alert" className="mt-4 text-sm text-red-600">
-              {historyError}
-            </p>
-          )}
-
-          {historyLoading ? (
-            <p className="mt-6 text-sm text-slate-500">Loading sessions...</p>
-          ) : sessions.length === 0 ? (
-            <p className="mt-6 text-sm text-slate-500">
-              No sessions created yet.
-            </p>
+              <ol className="mt-10 grid gap-4 sm:grid-cols-3">
+                {[
+                  {
+                    title: "Create a classroom",
+                    description:
+                      "Enter your lesson topic and get a short join code.",
+                    icon: "🏫",
+                  },
+                  {
+                    title: "Ask a Pulse",
+                    description:
+                      "Pick a concept and ask students to rate it from 1 to 5.",
+                    icon: "💬",
+                  },
+                  {
+                    title: "Adapt on the spot",
+                    description:
+                      "Watch the results update live and slow down where needed.",
+                    icon: "📈",
+                  },
+                ].map((item, index) => (
+                  <li
+                    key={item.title}
+                    className="rounded-2xl bg-slate-50 p-5 ring-1 ring-slate-200/70"
+                  >
+                    <div className="flex items-center gap-3">
+                      <span
+                        className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-xl shadow-sm"
+                        aria-hidden="true"
+                      >
+                        {item.icon}
+                      </span>
+                      <span className="text-sm font-semibold text-indigo-600">
+                        Step {index + 1}
+                      </span>
+                    </div>
+                    <h3 className="mt-4 font-bold text-slate-900">
+                      {item.title}
+                    </h3>
+                    <p className="mt-1 text-sm leading-6 text-slate-500">
+                      {item.description}
+                    </p>
+                  </li>
+                ))}
+              </ol>
+            </section>
           ) : (
-            <div className="mt-6 space-y-3">
-              {sessions.map((item) => (
-                <button
-                  key={item.code}
-                  type="button"
-                  onClick={() =>
-                    setSession({
-                      code: item.code,
-                      topic: item.topic,
-                      isActive: item.isActive,
-                    })
-                  }
-                  className="w-full rounded-xl border border-slate-200 p-4 text-left transition hover:border-blue-400 hover:bg-blue-50/30"
-                >
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <h4 className="font-bold text-slate-800">{item.topic}</h4>
+            <>
+              {/* Classroom overview with the join code */}
+              <section className="overflow-hidden rounded-3xl bg-indigo-950 text-white shadow-xl shadow-indigo-950/10">
+                <div className="p-6 sm:p-8">
+                  <div className="flex flex-wrap items-start justify-between gap-4">
+                    <div className="min-w-0">
+                      <span
+                        className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold ${
+                          session.isActive
+                            ? "bg-emerald-400/15 text-emerald-300"
+                            : "bg-white/10 text-indigo-200"
+                        }`}
+                      >
+                        <span
+                          className={`h-2 w-2 rounded-full ${
+                            session.isActive
+                              ? "animate-pulse bg-emerald-400"
+                              : "bg-indigo-300"
+                          }`}
+                        />
+                        {session.isActive ? "Classroom active" : "Ended"}
+                      </span>
+                      <h2 className="mt-3 break-words text-2xl font-extrabold tracking-tight sm:text-3xl">
+                        {session.topic}
+                      </h2>
+                    </div>
 
-                    <span
-                      className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                        item.isActive
-                          ? "bg-green-100 text-green-700"
-                          : "bg-slate-200 text-slate-700"
-                      }`}
+                    {session.isActive && (
+                      <button
+                        type="button"
+                        onClick={handleEndSession}
+                        disabled={ending}
+                        className="rounded-full border border-white/20 px-4 py-2 text-sm font-semibold text-indigo-100 transition hover:border-rose-300/60 hover:bg-rose-400/10 hover:text-rose-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:opacity-50"
+                      >
+                        {ending ? "Ending..." : "End classroom"}
+                      </button>
+                    )}
+                  </div>
+
+                  {/* The join code */}
+                  <div className="mt-8 flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
+                    <div>
+                      <p className="text-sm font-medium text-indigo-200">
+                        Students join with this code
+                      </p>
+                      <div
+                        className="mt-3 flex flex-wrap gap-2 sm:gap-3"
+                        aria-label={`Join code ${session.code}`}
+                      >
+                        {session.code.split("").map((char, index) => (
+                          <span
+                            key={`${char}-${index}`}
+                            className="flex h-14 w-11 items-center justify-center rounded-lg bg-white font-mono text-3xl font-extrabold text-indigo-950 shadow-lg shadow-black/20 sm:h-20 sm:w-16 sm:text-5xl"
+                          >
+                            {char}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+
+                    {session.isActive && (
+                      <div className="flex flex-wrap gap-3">
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            const button = event.currentTarget;
+                            void navigator.clipboard
+                              .writeText(session.code)
+                              .then(() => {
+                                button.dataset.copied = "true";
+                                window.setTimeout(() => {
+                                  delete button.dataset.copied;
+                                }, 1800);
+                              });
+                          }}
+                          className="group rounded-xl bg-white/10 px-5 py-3 text-sm font-bold text-white ring-1 ring-white/20 transition hover:bg-white/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+                        >
+                          <span className="group-data-[copied=true]:hidden">
+                            Copy code
+                          </span>
+                          <span className="hidden text-emerald-300 group-data-[copied=true]:inline">
+                            Copied ✓
+                          </span>
+                        </button>
+                        <Link
+                          href="/join"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="rounded-xl bg-white px-5 py-3 text-sm font-bold text-indigo-950 transition hover:bg-indigo-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+                        >
+                          Open student page ↗
+                        </Link>
+                      </div>
+                    )}
+                  </div>
+
+                  {endError && (
+                    <p
+                      role="alert"
+                      className="mt-5 rounded-lg bg-rose-500/15 px-3 py-2 text-sm text-rose-200"
                     >
-                      {item.isActive ? "Active" : "Ended"}
-                    </span>
+                      {endError}
+                    </p>
+                  )}
+
+                  {!session.isActive && (
+                    <p className="mt-6 text-sm text-indigo-200">
+                      This classroom has ended. You can still review its Pulses
+                      and results below.
+                    </p>
+                  )}
+                </div>
+              </section>
+
+              {/* Overall results */}
+              <section
+                aria-labelledby="results-heading"
+                className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200/70 sm:p-8"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <h2
+                      id="results-heading"
+                      className="text-xl font-extrabold tracking-tight"
+                    >
+                      How the class is doing
+                    </h2>
+                    <p className="mt-1 text-sm text-slate-500">
+                      Combined feedback from every Pulse in this classroom.
+                    </p>
                   </div>
-
-                  <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-sm text-slate-500">
-                    <span>
-                      Code: <strong>{item.code}</strong>
-                    </span>
-
-                    <span>{item.totalResponses} responses</span>
-                  </div>
-
-                  <div className="mt-3 flex items-center justify-between gap-2">
-                    <span className="text-xs text-slate-400">
-                      {new Date(item.createdAt).toLocaleString()}
-                    </span>
-
-                    <span className="text-sm font-semibold text-blue-600">
-                      View results →
-                    </span>
-                  </div>
-                </button>
-              ))}
-            </div>
-          )}
-        </section>
-
-        {/* Active session and results */}
-        {session && (
-          <section className="mt-8 space-y-6">
-            {/* Session information */}
-            <div className="rounded-2xl border border-green-200 bg-green-50 p-6">
-              <div className="flex items-center justify-between gap-3">
-                <h3 className="font-bold text-green-900">Session details</h3>
-
-                <span
-                  className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                    session.isActive
-                      ? "bg-green-100 text-green-700"
-                      : "bg-slate-200 text-slate-700"
-                  }`}
-                >
-                  {session.isActive ? "Active" : "Ended"}
-                </span>
-              </div>
-
-              <p className="mt-3 text-sm text-green-800">
-                Lesson: {session.topic}
-              </p>
-
-              <div className="mt-4 rounded-xl border border-green-200 bg-white p-5 text-center">
-                <p className="text-xs font-medium uppercase tracking-wider text-slate-500">
-                  Classroom session code
-                </p>
-
-                <p className="mt-2 text-4xl font-bold tracking-widest text-green-700">
-                  {session.code}
-                </p>
-
-                <p className="mt-2 text-xs text-slate-500">
-                  Share this code with your students.
-                </p>
-              </div>
-
-              {session.isActive && (
-                <a
-                  href="/join"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="mt-4 inline-block text-sm font-semibold text-green-800 underline"
-                >
-                  Open student page →
-                </a>
-              )}
-
-              {endError && (
-                <p role="alert" className="mt-3 text-sm text-red-600">
-                  {endError}
-                </p>
-              )}
-
-              {session.isActive && (
-                <button
-                  type="button"
-                  onClick={handleEndSession}
-                  disabled={ending}
-                  className="mt-5 w-full rounded-xl border border-red-200 px-5 py-3 font-semibold text-red-600 transition hover:bg-red-50 disabled:opacity-50"
-                >
-                  {ending ? "Ending session..." : "End session"}
-                </button>
-              )}
-
-              {!session.isActive && (
-                <p className="mt-4 text-sm font-medium text-slate-600">
-                  This session has ended. Your results are still available
-                  below.
-                </p>
-              )}
-            </div>
-
-            {/* Understanding Checks */}
-            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <h3 className="text-xl font-bold">Understanding Checks</h3>
-
-                  <p className="mt-1 text-sm text-slate-500">
-                    Monitor understanding concept by concept.
-                  </p>
+                  <span className="inline-flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700">
+                    <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-500" />
+                    Updates every 3 seconds
+                  </span>
                 </div>
 
-                <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">
-                  {pulses.length} Pulses
-                </span>
-              </div>
-
-              {/* Existing Pulses */}
-              <div className="mt-6 space-y-3">
-                {/* Pulse action error */}
-                {pulseActionError && (
-                  <p role="alert" className="mb-4 text-sm text-red-600">
-                    {pulseActionError}
+                {resultsError && (
+                  <p
+                    role="alert"
+                    className="mt-5 rounded-xl bg-rose-50 px-4 py-3 text-sm text-rose-700"
+                  >
+                    {resultsError}
                   </p>
                 )}
 
-                {pulsesLoading ? (
-                  <p className="text-sm text-slate-500">Loading Pulses...</p>
-                ) : pulses.length === 0 ? (
-                  <p className="rounded-xl bg-slate-50 p-4 text-sm text-slate-500">
-                    No understanding checks yet. Create your first Pulse below.
-                  </p>
-                ) : (
-                  pulses.map((pulse) => (
-                    <div
-                      key={pulse.id}
-                      className="rounded-xl border border-slate-200 p-5"
-                    >
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <h4 className="font-bold text-slate-800">
-                          {pulse.concept}
-                        </h4>
+                {results ? (
+                  <div className="mt-6 grid gap-8 lg:grid-cols-[260px_minmax(0,1fr)]">
+                    <div className="grid grid-cols-2 gap-3 lg:grid-cols-1">
+                      <div className="rounded-xl bg-slate-50 p-4">
+                        <p className="text-sm font-medium text-slate-500">
+                          Responses
+                        </p>
+                        <p className="mt-1 text-4xl font-extrabold tracking-tight">
+                          {results.totalResponses}
+                        </p>
+                      </div>
 
-                        <span
-                          className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                            pulse.isActive
-                              ? pulse.isPaused
-                                ? "bg-amber-100 text-amber-700"
-                                : "bg-green-100 text-green-700"
-                              : "bg-slate-100 text-slate-600"
+                      <div
+                        className={`rounded-xl p-4 ${
+                          results.totalResponses === 0
+                            ? "bg-slate-50"
+                            : results.averageScore < 3
+                              ? "bg-amber-50"
+                              : "bg-emerald-50"
+                        }`}
+                      >
+                        <p className="text-sm font-medium text-slate-500">
+                          Average understanding
+                        </p>
+                        <p className="mt-1 text-4xl font-extrabold tracking-tight">
+                          {results.totalResponses > 0 ? (
+                            <>
+                              {results.averageScore}
+                              <span className="text-lg font-bold text-slate-400">
+                                {" "}
+                                / 5
+                              </span>
+                            </>
+                          ) : (
+                            "—"
+                          )}
+                        </p>
+                        <p
+                          className={`mt-1 text-xs font-semibold ${
+                            results.totalResponses === 0
+                              ? "text-slate-500"
+                              : results.averageScore < 3
+                                ? "text-amber-800"
+                                : "text-emerald-800"
                           }`}
                         >
-                          {pulse.isActive
-                            ? pulse.isPaused
-                              ? "Paused"
-                              : "Active"
-                            : "Completed"}
-                        </span>
+                          {results.totalResponses === 0
+                            ? "Waiting for the first response"
+                            : results.averageScore < 3
+                              ? "Consider explaining again"
+                              : "The class is following well"}
+                        </p>
                       </div>
-
-                      <p className="mt-2 text-sm text-slate-500">
-                        {pulse.question}
-                      </p>
-
-                      {/* Statistics */}
-                      <div className="mt-5 grid grid-cols-2 gap-3">
-                        <div className="rounded-xl bg-blue-50 p-4">
-                          <p className="text-xs font-medium text-blue-700">
-                            Responses
-                          </p>
-                          <p className="mt-1 text-2xl font-bold text-blue-900">
-                            {pulse.totalResponses}
-                          </p>
-                        </div>
-
-                        <div className="rounded-xl bg-purple-50 p-4">
-                          <p className="text-xs font-medium text-purple-700">
-                            Average understanding
-                          </p>
-                          <p className="mt-1 text-2xl font-bold text-purple-900">
-                            {pulse.totalResponses > 0
-                              ? `${pulse.averageScore}/5`
-                              : "—"}
-                          </p>
-                        </div>
-                      </div>
-
-                      {/* Score distribution */}
-                      <div className="mt-5">
-                        <h5 className="text-sm font-semibold text-slate-700">
-                          Understanding distribution
-                        </h5>
-
-                        <div className="mt-4 space-y-3">
-                          {([1, 2, 3, 4, 5] as const).map((score) => {
-                            const count =
-                              pulse.distribution[
-                                String(score) as keyof PulseDistribution
-                              ];
-
-                            const percentage =
-                              pulse.totalResponses > 0
-                                ? (count / pulse.totalResponses) * 100
-                                : 0;
-
-                            return (
-                              <div key={score}>
-                                <div className="mb-1 flex justify-between text-xs">
-                                  <span className="text-slate-600">
-                                    Score {score}
-                                  </span>
-
-                                  <span className="font-medium text-slate-700">
-                                    {count} students ({Math.round(percentage)}%)
-                                  </span>
-                                </div>
-
-                                <div className="h-2 overflow-hidden rounded-full bg-slate-100">
-                                  <div
-                                    className="h-full rounded-full bg-blue-600 transition-all duration-500"
-                                    style={{ width: `${percentage}%` }}
-                                  />
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-
-                      {/* END PULSE BUTTON */}
-                      {pulse.isActive && (
-                        <div className="mt-5 flex flex-col gap-3 border-t border-slate-200 pt-4 sm:flex-row">
-                          {/* Pause / Resume button */}
-                          <button
-                            type="button"
-                            onClick={() =>
-                              handlePauseResumePulse(
-                                pulse.id,
-                                pulse.isPaused ? "resume" : "pause",
-                              )
-                            }
-                            disabled={
-                              updatingPulseId === pulse.id ||
-                              endingPulseId === pulse.id
-                            }
-                            className="flex-1 rounded-xl border border-amber-200 px-4 py-3 text-sm font-semibold text-amber-700 transition hover:bg-amber-50 disabled:opacity-50"
-                          >
-                            {updatingPulseId === pulse.id
-                              ? pulse.isPaused
-                                ? "Resuming..."
-                                : "Pausing..."
-                              : pulse.isPaused
-                                ? "Resume Pulse"
-                                : "Pause Pulse"}
-                          </button>
-
-                          {/* End button */}
-                          <button
-                            type="button"
-                            onClick={() => handleEndPulse(pulse.id)}
-                            disabled={
-                              endingPulseId === pulse.id ||
-                              updatingPulseId === pulse.id
-                            }
-                            className="flex-1 rounded-xl border border-red-200 px-4 py-3 text-sm font-semibold text-red-600 transition hover:bg-red-50 disabled:opacity-50"
-                          >
-                            {endingPulseId === pulse.id
-                              ? "Ending Pulse..."
-                              : "End this Pulse"}
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  ))
-                )}
-              </div>
-
-              {/* Create Pulse form */}
-              {session.isActive && (
-                <div className="mt-7 border-t border-slate-200 pt-6">
-                  <h4 className="font-bold">Create a new Pulse</h4>
-
-                  <p className="mt-1 text-sm text-slate-500">
-                    Choose a concept and ask your students about their
-                    understanding.
-                  </p>
-
-                  <form onSubmit={handleCreatePulse} className="mt-5 space-y-4">
-                    <div>
-                      <label
-                        htmlFor="concept"
-                        className="mb-2 block text-sm font-semibold"
-                      >
-                        Concept
-                      </label>
-
-                      <input
-                        id="concept"
-                        type="text"
-                        value={concept}
-                        onChange={(event) => setConcept(event.target.value)}
-                        maxLength={100}
-                        placeholder="e.g. Functions"
-                        required
-                        className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
-                      />
                     </div>
 
-                    <div>
-                      <label
-                        htmlFor="question"
-                        className="mb-2 block text-sm font-semibold"
-                      >
-                        Understanding question
-                      </label>
-
-                      <textarea
-                        id="question"
-                        value={question}
-                        onChange={(event) => setQuestion(event.target.value)}
-                        maxLength={300}
-                        rows={3}
-                        placeholder="How well do you understand JavaScript functions?"
-                        required
-                        className="w-full resize-y rounded-xl border border-slate-300 px-4 py-3 text-sm outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
-                      />
-                    </div>
-
-                    {pulsesError && (
-                      <p role="alert" className="text-sm text-red-600">
-                        {pulsesError}
-                      </p>
-                    )}
-
-                    <button
-                      type="submit"
-                      disabled={
-                        creatingPulse || !concept.trim() || !question.trim()
-                      }
-                      className="w-full rounded-xl bg-blue-600 px-5 py-3 font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      {creatingPulse ? "Creating Pulse..." : "+ Create Pulse"}
-                    </button>
-                  </form>
-                </div>
-              )}
-
-              {!session.isActive && (
-                <p className="mt-6 rounded-xl bg-slate-50 p-4 text-sm text-slate-500">
-                  This classroom has ended. You can still review its previous
-                  Pulses.
-                </p>
-              )}
-            </div>
-
-            {/* Results dashboard */}
-            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <h3 className="text-xl font-bold">Student understanding</h3>
-
-                  <p className="mt-1 text-sm text-slate-500">
-                    Live results for {session.topic}
-                  </p>
-                </div>
-
-                <span className="flex items-center gap-2 text-xs font-medium text-green-700">
-                  <span className="h-2 w-2 rounded-full bg-green-500" />
-                  Refreshing every 3 seconds
-                </span>
-              </div>
-
-              {resultsError && (
-                <p role="alert" className="mt-4 text-sm text-red-600">
-                  {resultsError}
-                </p>
-              )}
-
-              {results ? (
-                <>
-                  {/* Summary cards */}
-                  <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
-                    <div className="rounded-xl bg-blue-50 p-5">
-                      <p className="text-sm font-medium text-blue-700">
-                        Total responses
-                      </p>
-
-                      <p className="mt-2 text-3xl font-bold text-blue-900">
-                        {results.totalResponses}
-                      </p>
-                    </div>
-
-                    <div className="rounded-xl bg-purple-50 p-5">
-                      <p className="text-sm font-medium text-purple-700">
-                        Average understanding
-                      </p>
-
-                      <p className="mt-2 text-3xl font-bold text-purple-900">
-                        {results.averageScore} / 5
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Distribution */}
-                  <div className="mt-8">
-                    <h4 className="font-bold">Understanding distribution</h4>
-
-                    <p className="mt-1 text-sm text-slate-500">
-                      Number of students who selected each score.
-                    </p>
-
-                    <div className="mt-6 space-y-5">
+                    <div className="space-y-4">
                       {([1, 2, 3, 4, 5] as const).map((score) => {
                         const count =
                           results.distribution[
@@ -1016,26 +931,43 @@ export default function Home() {
 
                         return (
                           <div key={score}>
-                            <div className="mb-2 flex items-center justify-between text-sm">
-                              <span className="font-medium text-slate-700">
-                                Score {score}
+                            <div className="mb-1.5 flex items-center justify-between gap-3 text-sm">
+                              <span className="font-semibold text-slate-700">
+                                {score}{" "}
+                                <span className="font-medium text-slate-400">
+                                  {
+                                    [
+                                      "Lost",
+                                      "Unsure",
+                                      "Getting there",
+                                      "Good",
+                                      "Got it",
+                                    ][score - 1]
+                                  }
+                                </span>
                               </span>
-
-                              <span className="text-slate-500">
-                                {count} students ({Math.round(percentage)}%)
+                              <span className="text-xs text-slate-500">
+                                {count} ({Math.round(percentage)}%)
                               </span>
                             </div>
-
                             <div
                               className="h-3 overflow-hidden rounded-full bg-slate-100"
                               role="progressbar"
                               aria-label={`Score ${score} responses`}
-                              aria-valuenow={percentage}
+                              aria-valuenow={Math.round(percentage)}
                               aria-valuemin={0}
                               aria-valuemax={100}
                             >
                               <div
-                                className="h-full rounded-full bg-blue-600 transition-all duration-500"
+                                className={`h-full rounded-full transition-all duration-700 ${
+                                  [
+                                    "bg-rose-500",
+                                    "bg-orange-400",
+                                    "bg-amber-400",
+                                    "bg-lime-500",
+                                    "bg-emerald-500",
+                                  ][score - 1]
+                                }`}
                                 style={{ width: `${percentage}%` }}
                               />
                             </div>
@@ -1044,56 +976,334 @@ export default function Home() {
                       })}
                     </div>
                   </div>
-                </>
-              ) : (
-                <div className="py-12 text-center">
-                  <p className="font-semibold text-slate-700">
-                    Loading results...
-                  </p>
+                ) : (
+                  <div
+                    className="mt-6 animate-pulse space-y-3"
+                    aria-hidden="true"
+                  >
+                    <div className="h-24 rounded-xl bg-slate-100" />
+                    <div className="h-24 rounded-xl bg-slate-100" />
+                  </div>
+                )}
+              </section>
 
-                  <p className="mt-2 text-sm text-slate-500">
-                    Waiting for student responses.
-                  </p>
-                </div>
-              )}
-            </div>
-          </section>
-        )}
-
-        {!session && (
-          <div className="mt-8 grid gap-5 md:grid-cols-3">
-            {[
-              {
-                title: "Create a session",
-                description:
-                  "Enter a lesson topic and generate a classroom code.",
-              },
-              {
-                title: "Students respond",
-                description: "Students join and rate their understanding.",
-              },
-              {
-                title: "Review results",
-                description: "Discover which concepts need more explanation.",
-              },
-            ].map((item, index) => (
-              <div
-                key={item.title}
-                className="rounded-2xl border border-slate-200 bg-white p-5"
+              {/* Pulses */}
+              <section
+                aria-labelledby="pulses-heading"
+                className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200/70 sm:p-8"
               >
-                <span className="text-sm font-bold text-blue-600">
-                  0{index + 1}
-                </span>
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <h2
+                      id="pulses-heading"
+                      className="text-xl font-extrabold tracking-tight"
+                    >
+                      Understanding checks
+                    </h2>
+                    <p className="mt-1 text-sm text-slate-500">
+                      Ask about one concept at a time and watch the answers
+                      arrive.
+                    </p>
+                  </div>
+                  <span className="rounded-full bg-indigo-50 px-3 py-1.5 text-sm font-semibold text-indigo-700">
+                    {pulses.length} {pulses.length === 1 ? "Pulse" : "Pulses"}
+                  </span>
+                </div>
 
-                <h3 className="mt-3 font-bold">{item.title}</h3>
+                {/* Create Pulse */}
+                {session.isActive && (
+                  <form
+                    onSubmit={handleCreatePulse}
+                    className="mt-6 rounded-2xl bg-indigo-50/70 p-5 ring-1 ring-indigo-100"
+                  >
+                    <h3 className="font-bold text-slate-900">
+                      Ask a new Pulse
+                    </h3>
 
-                <p className="mt-2 text-sm leading-6 text-slate-500">
-                  {item.description}
-                </p>
-              </div>
-            ))}
-          </div>
-        )}
+                    <div className="mt-4 grid gap-4 md:grid-cols-[1fr_1.6fr]">
+                      <div>
+                        <label
+                          htmlFor="concept"
+                          className="mb-1.5 block text-sm font-semibold text-slate-700"
+                        >
+                          Concept
+                        </label>
+                        <input
+                          id="concept"
+                          type="text"
+                          value={concept}
+                          onChange={(event) => setConcept(event.target.value)}
+                          maxLength={100}
+                          placeholder="e.g. Functions"
+                          required
+                          className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition placeholder:text-slate-400 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100"
+                        />
+                      </div>
+
+                      <div>
+                        <label
+                          htmlFor="question"
+                          className="mb-1.5 block text-sm font-semibold text-slate-700"
+                        >
+                          Question for students
+                        </label>
+                        <input
+                          id="question"
+                          type="text"
+                          value={question}
+                          onChange={(event) => setQuestion(event.target.value)}
+                          maxLength={300}
+                          placeholder="How well do you understand this concept?"
+                          required
+                          className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition placeholder:text-slate-400 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="mt-3 flex flex-wrap items-center gap-2">
+                      <span className="text-xs font-medium text-slate-500">
+                        Quick questions:
+                      </span>
+                      {[
+                        "How well do you understand this concept?",
+                        "Could you explain this to a classmate?",
+                        "How confident are you using this on your own?",
+                      ].map((suggestion) => (
+                        <button
+                          key={suggestion}
+                          type="button"
+                          onClick={() => setQuestion(suggestion)}
+                          className="rounded-full bg-white px-3 py-1.5 text-xs font-medium text-slate-600 ring-1 ring-slate-200 transition hover:text-indigo-700 hover:ring-indigo-300"
+                        >
+                          {suggestion}
+                        </button>
+                      ))}
+                    </div>
+
+                    {pulsesError && (
+                      <p
+                        role="alert"
+                        className="mt-4 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700"
+                      >
+                        {pulsesError}
+                      </p>
+                    )}
+
+                    <button
+                      type="submit"
+                      disabled={
+                        creatingPulse || !concept.trim() || !question.trim()
+                      }
+                      className="mt-5 w-full rounded-xl bg-indigo-600 px-5 py-3 text-sm font-bold text-white shadow-sm shadow-indigo-600/30 transition hover:bg-indigo-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
+                    >
+                      {creatingPulse ? "Sending to students..." : "Send Pulse"}
+                    </button>
+                  </form>
+                )}
+
+                {pulseActionError && (
+                  <p
+                    role="alert"
+                    className="mt-5 rounded-xl bg-rose-50 px-4 py-3 text-sm text-rose-700"
+                  >
+                    {pulseActionError}
+                  </p>
+                )}
+
+                {/* Pulse list */}
+                <div className="mt-6 space-y-4">
+                  {pulsesLoading ? (
+                    <div className="animate-pulse space-y-3" aria-hidden="true">
+                      <div className="h-40 rounded-2xl bg-slate-100" />
+                      <div className="h-40 rounded-2xl bg-slate-100" />
+                    </div>
+                  ) : pulses.length === 0 ? (
+                    <div className="rounded-2xl border border-dashed border-slate-300 px-5 py-12 text-center">
+                      <p className="text-3xl" aria-hidden="true">
+                        💡
+                      </p>
+                      <p className="mt-3 font-bold text-slate-800">
+                        No Pulses yet
+                      </p>
+                      <p className="mx-auto mt-1 max-w-sm text-sm text-slate-500">
+                        {session.isActive
+                          ? "Ask your first question above and students will see it right away."
+                          : "No Pulses were created in this classroom."}
+                      </p>
+                    </div>
+                  ) : (
+                    pulses.map((pulse) => (
+                      <article
+                        key={pulse.id}
+                        className={`rounded-2xl border-l-4 bg-white p-5 shadow-sm ring-1 ring-slate-200/70 sm:p-6 ${
+                          pulse.isActive
+                            ? pulse.isPaused
+                              ? "border-l-amber-400"
+                              : "border-l-emerald-500"
+                            : "border-l-slate-300"
+                        }`}
+                      >
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <h3 className="break-words text-lg font-bold text-slate-900">
+                              {pulse.concept}
+                            </h3>
+                            <p className="mt-1 text-sm leading-6 text-slate-500">
+                              {pulse.question}
+                            </p>
+                          </div>
+
+                          <span
+                            className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ${
+                              pulse.isActive
+                                ? pulse.isPaused
+                                  ? "bg-amber-50 text-amber-800"
+                                  : "bg-emerald-50 text-emerald-700"
+                                : "bg-slate-100 text-slate-600"
+                            }`}
+                          >
+                            <span
+                              className={`h-1.5 w-1.5 rounded-full ${
+                                pulse.isActive
+                                  ? pulse.isPaused
+                                    ? "bg-amber-500"
+                                    : "animate-pulse bg-emerald-500"
+                                  : "bg-slate-400"
+                              }`}
+                            />
+                            {pulse.isActive
+                              ? pulse.isPaused
+                                ? "Paused"
+                                : "Collecting answers"
+                              : "Completed"}
+                          </span>
+                        </div>
+
+                        <div className="mt-5 grid gap-6 md:grid-cols-[180px_minmax(0,1fr)]">
+                          <div className="flex gap-3 md:flex-col">
+                            <div className="flex-1 rounded-xl bg-slate-50 p-3.5">
+                              <p className="text-xs font-medium text-slate-500">
+                                Responses
+                              </p>
+                              <p className="mt-1 text-2xl font-extrabold">
+                                {pulse.totalResponses}
+                              </p>
+                            </div>
+                            <div
+                              className={`flex-1 rounded-xl p-3.5 ${
+                                pulse.totalResponses === 0
+                                  ? "bg-slate-50"
+                                  : pulse.averageScore < 3
+                                    ? "bg-amber-50"
+                                    : "bg-emerald-50"
+                              }`}
+                            >
+                              <p className="text-xs font-medium text-slate-500">
+                                Average
+                              </p>
+                              <p className="mt-1 text-2xl font-extrabold">
+                                {pulse.totalResponses > 0
+                                  ? `${pulse.averageScore} / 5`
+                                  : "—"}
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="space-y-2.5">
+                            {([1, 2, 3, 4, 5] as const).map((score) => {
+                              const count =
+                                pulse.distribution[
+                                  String(score) as keyof PulseDistribution
+                                ];
+
+                              const percentage =
+                                pulse.totalResponses > 0
+                                  ? (count / pulse.totalResponses) * 100
+                                  : 0;
+
+                              return (
+                                <div
+                                  key={score}
+                                  className="flex items-center gap-3"
+                                >
+                                  <span className="w-4 text-sm font-bold text-slate-600">
+                                    {score}
+                                  </span>
+                                  <div className="h-2.5 flex-1 overflow-hidden rounded-full bg-slate-100">
+                                    <div
+                                      className={`h-full rounded-full transition-all duration-700 ${
+                                        [
+                                          "bg-rose-500",
+                                          "bg-orange-400",
+                                          "bg-amber-400",
+                                          "bg-lime-500",
+                                          "bg-emerald-500",
+                                        ][score - 1]
+                                      }`}
+                                      style={{ width: `${percentage}%` }}
+                                    />
+                                  </div>
+                                  <span className="w-20 text-right text-xs text-slate-500">
+                                    {count} ({Math.round(percentage)}%)
+                                  </span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+
+                        {pulse.isActive && (
+                          <div className="mt-5 flex flex-wrap gap-3 border-t border-slate-100 pt-4">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                handlePauseResumePulse(
+                                  pulse.id,
+                                  pulse.isPaused ? "resume" : "pause",
+                                )
+                              }
+                              disabled={
+                                updatingPulseId === pulse.id ||
+                                endingPulseId === pulse.id
+                              }
+                              className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-amber-300 hover:bg-amber-50 hover:text-amber-800 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              {updatingPulseId === pulse.id
+                                ? pulse.isPaused
+                                  ? "Resuming..."
+                                  : "Pausing..."
+                                : pulse.isPaused
+                                  ? "Resume"
+                                  : "Pause"}
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => handleEndPulse(pulse.id)}
+                              disabled={
+                                endingPulseId === pulse.id ||
+                                updatingPulseId === pulse.id
+                              }
+                              className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-rose-600 transition hover:border-rose-300 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              {endingPulseId === pulse.id
+                                ? "Ending..."
+                                : "End Pulse"}
+                            </button>
+                          </div>
+                        )}
+                      </article>
+                    ))
+                  )}
+                </div>
+              </section>
+            </>
+          )}
+
+          <footer className="pb-4 pt-2 text-center text-xs text-slate-400">
+            PulseCheck. Anonymous feedback, better lessons.
+          </footer>
+        </div>
       </div>
     </main>
   );
