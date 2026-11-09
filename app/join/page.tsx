@@ -235,35 +235,60 @@ export default function JoinPage() {
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-slate-50 px-5 py-12">
-      <div className="w-full max-w-md">
+    <main className="flex min-h-[100dvh] flex-col bg-[#f6f6fb] px-4 py-6 text-slate-900 antialiased sm:py-10">
+      <div className="mx-auto flex w-full max-w-md flex-1 flex-col">
         {/* Header */}
-        <div className="mb-8 text-center">
-          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-600 text-2xl font-bold text-white">
-            P
+        <header className="flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-600 text-white shadow-md shadow-indigo-600/25">
+              <svg
+                viewBox="0 0 24 24"
+                className="h-5 w-5"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.4"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M3 12h4l2.5-6 5 12 2.5-6h4" />
+              </svg>
+            </span>
+            <span className="text-lg font-extrabold tracking-tight">
+              PulseCheck
+            </span>
           </div>
 
-          <h1 className="mt-4 text-2xl font-bold text-slate-900">PulseCheck</h1>
+          {session && !sessionEnded && (
+            <button
+              type="button"
+              onClick={resetJoin}
+              className="rounded-full px-3 py-1.5 text-sm font-semibold text-slate-500 transition hover:bg-white hover:text-slate-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-600"
+            >
+              Leave
+            </button>
+          )}
+        </header>
 
-          <p className="mt-2 text-sm text-slate-500">
-            Classroom understanding check
-          </p>
-        </div>
-
-        <div className="rounded-2xl border border-slate-200 bg-white p-7 shadow-sm">
-          {/* Join classroom */}
+        <div className="flex flex-1 flex-col justify-center py-8">
+          {/* ---------- Join classroom ---------- */}
           {!session && (
-            <>
-              <h2 className="text-xl font-bold">Join your classroom</h2>
-
-              <p className="mt-2 text-sm leading-6 text-slate-500">
-                Enter the code provided by your teacher.
+            <section>
+              <h1 className="text-4xl font-extrabold leading-tight tracking-tight text-slate-950">
+                Join your class
+              </h1>
+              <p className="mt-3 text-base leading-7 text-slate-500">
+                Type the 6-character code from your teacher. No name or account
+                needed.
               </p>
 
-              <form onSubmit={handleJoin} className="mt-7">
+              <form
+                onSubmit={handleJoin}
+                className="mt-8 rounded-3xl bg-white p-5 shadow-sm ring-1 ring-slate-200/70 sm:p-6"
+              >
                 <label
                   htmlFor="code"
-                  className="mb-2 block text-sm font-semibold"
+                  className="mb-2 block text-sm font-semibold text-slate-700"
                 >
                   Classroom code
                 </label>
@@ -280,15 +305,20 @@ export default function JoinPage() {
                         .slice(0, 6),
                     )
                   }
-                  placeholder="E.g. F2YVBA"
+                  placeholder="F2YVBA"
                   maxLength={6}
                   required
                   autoComplete="off"
-                  className="w-full rounded-xl border border-slate-300 px-4 py-4 text-center text-xl font-bold tracking-[0.3em] outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
+                  autoCapitalize="characters"
+                  spellCheck={false}
+                  className="w-full rounded-2xl border-2 border-slate-200 bg-slate-50 px-4 py-5 text-center font-mono text-3xl font-extrabold tracking-[0.3em] text-indigo-950 outline-none transition placeholder:text-slate-300 focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-100"
                 />
 
                 {error && (
-                  <p role="alert" className="mt-3 text-sm text-red-600">
+                  <p
+                    role="alert"
+                    className="mt-3 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700"
+                  >
                     {error}
                   </p>
                 )}
@@ -296,149 +326,228 @@ export default function JoinPage() {
                 <button
                   type="submit"
                   disabled={loading || code.length !== 6}
-                  className="mt-5 w-full rounded-xl bg-blue-600 px-5 py-3 font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="mt-5 w-full rounded-2xl bg-indigo-600 px-5 py-4 text-base font-bold text-white shadow-md shadow-indigo-600/25 transition hover:bg-indigo-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"
                 >
-                  {loading ? "Checking session..." : "Join session"}
+                  {loading ? "Checking code..." : "Join class"}
                 </button>
               </form>
-            </>
+            </section>
           )}
 
-          {/* Classroom has ended */}
+          {/* ---------- Classroom has ended ---------- */}
           {session && sessionEnded && (
-            <div className="py-8 text-center">
-              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-slate-100 text-2xl">
-                ✓
-              </div>
-
-              <h2 className="mt-4 text-xl font-bold">Classroom ended</h2>
-
-              <p className="mt-3 text-sm leading-6 text-slate-500">
-                Your teacher has ended this classroom session. Thank you for
-                participating!
-              </p>
-
-              <button
-                type="button"
-                onClick={resetJoin}
-                className="mt-6 text-sm font-semibold text-blue-600 hover:text-blue-800"
+            <section className="rounded-3xl bg-white p-8 text-center shadow-sm ring-1 ring-slate-200/70">
+              <div
+                className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-slate-100 text-3xl"
+                aria-hidden="true"
               >
-                Back to join
-              </button>
-            </div>
-          )}
-
-          {/* Classroom found, but no active Pulse */}
-          {session && !sessionEnded && !activePulse && (
-            <div className="py-6 text-center">
-              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-amber-100 text-2xl">
-                …
+                👋
               </div>
-
-              <h2 className="mt-4 text-xl font-bold">No active question yet</h2>
-
-              <p className="mt-3 text-sm leading-6 text-slate-500">
-                Your teacher hasn&apos;t started an understanding check. Please
-                wait for the teacher to create a Pulse.
-              </p>
-
-              <button
-                type="button"
-                onClick={resetJoin}
-                className="mt-6 text-sm font-semibold text-blue-600 hover:text-blue-800"
-              >
-                Back to join
-              </button>
-            </div>
-          )}
-
-          {/* Pulse already answered */}
-          {session && !sessionEnded && activePulse && submitted && (
-            <div className="py-6 text-center">
-              <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-green-100 text-3xl text-green-700">
-                ✓
-              </div>
-
-              <h2 className="mt-5 text-xl font-bold">Response submitted!</h2>
-
-              <p className="mt-2 text-sm leading-6 text-slate-500">
-                Thank you for sharing your understanding. Your response has been
-                saved.
-              </p>
-
-              <p className="mt-5 rounded-xl bg-slate-50 p-4 text-sm font-medium">
-                {activePulse.concept}
-              </p>
-            </div>
-          )}
-
-          {/* Active Pulse question */}
-          {session && !sessionEnded && activePulse && !submitted && (
-            <>
-              <span
-                className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                  activePulse.isPaused
-                    ? "bg-amber-100 text-amber-800"
-                    : "bg-green-50 text-green-700"
-                }`}
-              >
-                {activePulse.isPaused
-                  ? "Question paused"
-                  : "Active understanding check"}
-              </span>
-
-              <p className="mt-5 text-sm text-slate-500">{session.topic}</p>
-
-              <h2 className="mt-2 text-2xl font-bold text-slate-900">
-                {activePulse.concept}
+              <h2 className="mt-5 text-2xl font-extrabold tracking-tight">
+                Class is over
               </h2>
+              <p className="mt-2 text-base leading-7 text-slate-500">
+                Your teacher ended this session. Thanks for taking part!
+              </p>
+              <button
+                type="button"
+                onClick={resetJoin}
+                className="mt-7 w-full rounded-2xl bg-slate-900 px-5 py-4 text-base font-bold text-white transition hover:bg-slate-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900"
+              >
+                Join another class
+              </button>
+            </section>
+          )}
 
-              <p className="mt-4 text-base leading-7 text-slate-600">
+          {/* ---------- Joined, waiting for a Pulse ---------- */}
+          {session && !sessionEnded && !activePulse && (
+            <section className="rounded-3xl bg-white p-8 text-center shadow-sm ring-1 ring-slate-200/70">
+              <div className="relative mx-auto flex h-16 w-16 items-center justify-center">
+                <span className="absolute inset-0 animate-ping motion-reduce:animate-none rounded-full bg-indigo-200 motion-reduce:animate-none" />
+                <span
+                  className="relative flex h-16 w-16 items-center justify-center rounded-full bg-indigo-100 text-3xl"
+                  aria-hidden="true"
+                >
+                  ⏳
+                </span>
+              </div>
+              <p className="mt-6 text-sm font-semibold text-indigo-600">
+                You are in {session.topic}
+              </p>
+              <h2 className="mt-1 text-2xl font-extrabold tracking-tight">
+                Waiting for a question
+              </h2>
+              <p
+                role="status"
+                className="mt-2 text-base leading-7 text-slate-500"
+              >
+                Your teacher has not asked anything yet. Keep this page open and
+                it will appear here by itself.
+              </p>
+            </section>
+          )}
+
+          {/* ---------- Already answered ---------- */}
+          {session && !sessionEnded && activePulse && submitted && (
+            <section className="rounded-3xl bg-white p-8 text-center shadow-sm ring-1 ring-slate-200/70">
+              <div
+                className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-emerald-100 text-3xl text-emerald-700"
+                aria-hidden="true"
+              >
+                ✓
+              </div>
+              <h2 className="mt-5 text-2xl font-extrabold tracking-tight">
+                Answer sent
+              </h2>
+              <p className="mt-2 text-base leading-7 text-slate-500">
+                Thanks for sharing your understanding. Your teacher sees the
+                classroom results, not your name.
+              </p>
+
+              <div className="mt-6 rounded-2xl bg-slate-50 p-4 text-left">
+                <p className="text-sm text-slate-500">You answered about</p>
+                <p className="mt-1 font-bold text-slate-900">
+                  {activePulse.concept}
+                </p>
+                {score !== null && (
+                  <p className="mt-2 text-sm font-semibold text-slate-700">
+                    {["😵", "😕", "😐", "🙂", "🤩"][score - 1]} {score} out of 5
+                  </p>
+                )}
+              </div>
+
+              <p
+                role="status"
+                className="mt-6 text-sm leading-6 text-slate-500"
+              >
+                Stay on this page. The next question will show up automatically.
+              </p>
+            </section>
+          )}
+
+          {/* ---------- Active question ---------- */}
+          {session && !sessionEnded && activePulse && !submitted && (
+            <section>
+              <div className="flex items-center justify-between gap-3">
+                <p className="truncate text-sm font-semibold text-slate-500">
+                  {session.topic}
+                </p>
+                <span
+                  className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ${
+                    activePulse.isPaused
+                      ? "bg-amber-100 text-amber-800"
+                      : "bg-emerald-100 text-emerald-800"
+                  }`}
+                >
+                  <span
+                    className={`h-1.5 w-1.5 rounded-full ${
+                      activePulse.isPaused
+                        ? "bg-amber-500"
+                        : "animate-pulse bg-emerald-500"
+                    }`}
+                  />
+                  {activePulse.isPaused ? "Paused" : "Live question"}
+                </span>
+              </div>
+
+              <h1 className="mt-4 break-words text-3xl font-extrabold leading-tight tracking-tight text-slate-950">
+                {activePulse.concept}
+              </h1>
+              <p className="mt-2 text-lg leading-7 text-slate-600">
                 {activePulse.question}
               </p>
 
               {activePulse.isPaused && (
                 <p
                   role="status"
-                  className="mt-5 rounded-xl bg-amber-50 p-4 text-sm leading-6 text-amber-800"
+                  className="mt-5 rounded-2xl bg-amber-50 p-4 text-sm leading-6 text-amber-900 ring-1 ring-amber-200"
                 >
-                  Your teacher has paused this question. You can submit your
-                  answer when the teacher resumes it.
+                  Your teacher paused this question. You can answer as soon as
+                  it is resumed.
                 </p>
               )}
 
-              <p className="mt-7 text-sm font-semibold">
-                Select your understanding level:
-              </p>
+              {/* Scale */}
+              <div
+                role="radiogroup"
+                aria-label="Your understanding level"
+                className="mt-6 space-y-2.5"
+              >
+                {[1, 2, 3, 4, 5].map((value) => {
+                  const selected = score === value;
 
-              <div className="mt-4 grid grid-cols-5 gap-2">
-                {[1, 2, 3, 4, 5].map((value) => (
-                  <button
-                    key={value}
-                    type="button"
-                    onClick={() => setScore(value)}
-                    disabled={activePulse.isPaused || submitting}
-                    aria-pressed={score === value}
-                    className={`rounded-xl border py-4 text-lg font-bold transition ${
-                      activePulse.isPaused
-                        ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400"
-                        : score === value
-                          ? "border-blue-600 bg-blue-600 text-white"
-                          : "border-slate-200 bg-slate-50 text-slate-700 hover:border-blue-400"
-                    }`}
-                  >
-                    {value}
-                  </button>
-                ))}
-              </div>
+                  return (
+                    <button
+                      key={value}
+                      type="button"
+                      role="radio"
+                      aria-checked={selected}
+                      onClick={() => setScore(value)}
+                      disabled={activePulse.isPaused || submitting}
+                      className={`flex w-full items-center gap-4 rounded-2xl p-3.5 text-left transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 disabled:cursor-not-allowed disabled:opacity-50 ${
+                        selected
+                          ? [
+                              "bg-rose-50 ring-2 ring-rose-500",
+                              "bg-orange-50 ring-2 ring-orange-400",
+                              "bg-amber-50 ring-2 ring-amber-400",
+                              "bg-lime-50 ring-2 ring-lime-500",
+                              "bg-emerald-50 ring-2 ring-emerald-500",
+                            ][value - 1]
+                          : "bg-white ring-1 ring-slate-200 hover:ring-slate-400 active:scale-[0.99]"
+                      }`}
+                    >
+                      <span
+                        className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-slate-50 text-2xl"
+                        aria-hidden="true"
+                      >
+                        {["😵", "😕", "😐", "🙂", "🤩"][value - 1]}
+                      </span>
 
-              <div className="mt-3 flex justify-between text-xs text-slate-500">
-                <span>1 — Don&apos;t understand</span>
-                <span>5 — Completely</span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-base font-bold text-slate-900">
+                          {
+                            [
+                              "Totally lost",
+                              "Not really",
+                              "Getting there",
+                              "Mostly got it",
+                              "Completely got it",
+                            ][value - 1]
+                          }
+                        </span>
+                        <span className="block text-sm text-slate-500">
+                          {
+                            [
+                              "I need this explained again",
+                              "I am confused about parts of it",
+                              "I understand some of it",
+                              "I only have small questions",
+                              "I could teach this to someone",
+                            ][value - 1]
+                          }
+                        </span>
+                      </span>
+
+                      <span
+                        className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-sm font-bold ${
+                          selected
+                            ? "bg-slate-900 text-white"
+                            : "bg-slate-100 text-slate-500"
+                        }`}
+                        aria-hidden="true"
+                      >
+                        {selected ? "✓" : value}
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
 
               {responseError && (
-                <p role="alert" className="mt-4 text-sm text-red-600">
+                <p
+                  role="alert"
+                  className="mt-4 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700"
+                >
                   {responseError}
                 </p>
               )}
@@ -447,21 +556,27 @@ export default function JoinPage() {
                 type="button"
                 onClick={handleSubmitResponse}
                 disabled={activePulse.isPaused || submitting || score === null}
-                className="mt-7 w-full rounded-xl bg-blue-600 px-5 py-3 font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+                className="mt-6 w-full rounded-2xl bg-indigo-600 px-5 py-4 text-base font-bold text-white shadow-md shadow-indigo-600/25 transition hover:bg-indigo-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"
               >
                 {activePulse.isPaused
-                  ? "Waiting for teacher..."
+                  ? "Waiting for your teacher..."
                   : submitting
-                    ? "Submitting..."
-                    : "Submit my answer"}
+                    ? "Sending..."
+                    : score === null
+                      ? "Pick an answer"
+                      : "Send my answer"}
               </button>
-            </>
+
+              <p className="mt-3 text-center text-xs text-slate-500">
+                Your answer is anonymous. Your teacher only sees the totals.
+              </p>
+            </section>
           )}
         </div>
 
-        <p className="mt-6 text-center text-xs text-slate-400">
-          PulseCheck · Learn, understand, improve.
-        </p>
+        <footer className="pb-2 text-center text-xs text-slate-400">
+          PulseCheck. Anonymous feedback, better lessons.
+        </footer>
       </div>
     </main>
   );

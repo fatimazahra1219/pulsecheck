@@ -455,6 +455,11 @@ export default function Home() {
     };
   }, [sessionCode, pulseRefresh]);
 
+  // Find Pulses with responses and an average below 3/5.
+  const attentionPulses = pulses.filter(
+    (pulse) => pulse.totalResponses > 0 && pulse.averageScore < 3,
+  );
+
   return (
     <main className="min-h-screen bg-[#f6f6fb] text-slate-900 antialiased">
       {/* Header */}
@@ -1010,6 +1015,68 @@ export default function Home() {
                   </span>
                 </div>
 
+                {/* Smart understanding alerts */}
+                {!pulsesLoading && attentionPulses.length > 0 && (
+                  <div
+                    role="status"
+                    className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 p-4 sm:p-5"
+                  >
+                    <div className="flex items-start gap-3">
+                      <span
+                        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-amber-100 text-lg font-bold text-amber-800"
+                        aria-hidden="true"
+                      >
+                        !
+                      </span>
+
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h3 className="font-bold text-amber-950">
+                            {attentionPulses.length}{" "}
+                            {attentionPulses.length === 1
+                              ? "Pulse needs"
+                              : "Pulses need"}{" "}
+                            attention
+                          </h3>
+
+                          <span className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-800">
+                            Below 3/5
+                          </span>
+                        </div>
+
+                        <p className="mt-1 text-sm leading-6 text-amber-800">
+                          Students may need more explanation on these concepts.
+                          Consider revisiting them before moving forward.
+                        </p>
+
+                        <ul className="mt-4 space-y-2">
+                          {attentionPulses.map((pulse) => (
+                            <li
+                              key={pulse.id}
+                              className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-white/80 px-3 py-3"
+                            >
+                              <span className="text-sm font-semibold text-slate-800">
+                                {pulse.concept}
+                              </span>
+
+                              <span className="text-sm font-bold text-amber-800">
+                                {pulse.averageScore}/5
+                                <span className="ml-1 text-xs font-normal text-slate-500">
+                                  ({pulse.totalResponses}{" "}
+                                  {pulse.totalResponses === 1
+                                    ? "response"
+                                    : "responses"}
+                                  )
+                                </span>
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 {/* Create Pulse */}
                 {session.isActive && (
                   <form
@@ -1151,6 +1218,28 @@ export default function Home() {
                             <p className="mt-1 text-sm leading-6 text-slate-500">
                               {pulse.question}
                             </p>
+                            {pulse.totalResponses > 0 &&
+                              pulse.averageScore < 3 && (
+                                <div className="mt-3 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5">
+                                  <span
+                                    className="text-amber-700"
+                                    aria-hidden="true"
+                                  >
+                                    ⚠
+                                  </span>
+
+                                  <div>
+                                    <p className="text-xs font-bold text-amber-900">
+                                      Needs attention
+                                    </p>
+
+                                    <p className="mt-0.5 text-xs leading-5 text-amber-800">
+                                      Average understanding is below 3/5.
+                                      Consider explaining this concept again.
+                                    </p>
+                                  </div>
+                                </div>
+                              )}
                           </div>
 
                           <span
