@@ -460,6 +460,24 @@ export default function Home() {
     (pulse) => pulse.totalResponses > 0 && pulse.averageScore < 3,
   );
 
+  // Find concepts where student understanding is divided.
+  const mixedUnderstandingPulses = pulses.filter((pulse) => {
+    // Require a minimum number of responses.
+    if (pulse.totalResponses < 4) return false;
+
+    // The existing low-average alert handles these cases.
+    if (pulse.averageScore < 3) return false;
+
+    const lowResponses = pulse.distribution["1"] + pulse.distribution["2"];
+
+    const highResponses = pulse.distribution["4"] + pulse.distribution["5"];
+
+    const lowPercentage = lowResponses / pulse.totalResponses;
+    const highPercentage = highResponses / pulse.totalResponses;
+
+    return lowPercentage >= 0.25 && highPercentage >= 0.25;
+  });
+
   return (
     <main className="min-h-screen bg-[#f6f6fb] text-slate-900 antialiased">
       {/* Header */}
@@ -1076,6 +1094,89 @@ export default function Home() {
                     </div>
                   </div>
                 )}
+
+                {/* Mixed understanding alerts */}
+{!pulsesLoading && mixedUnderstandingPulses.length > 0 && (
+  <div
+    role="status"
+    className="mt-4 rounded-2xl border border-indigo-200 bg-indigo-50 p-4 sm:p-5"
+  >
+    <div className="flex items-start gap-3">
+      <span
+        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-indigo-100 text-lg font-bold text-indigo-700"
+        aria-hidden="true"
+      >
+        ↔
+      </span>
+
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-center gap-2">
+          <h3 className="font-bold text-indigo-950">
+            Mixed understanding detected
+          </h3>
+
+          <span className="rounded-full bg-indigo-100 px-2.5 py-1 text-xs font-semibold text-indigo-800">
+            {mixedUnderstandingPulses.length}{" "}
+            {mixedUnderstandingPulses.length === 1
+              ? "concept"
+              : "concepts"}
+          </span>
+        </div>
+
+        <p className="mt-1 text-sm leading-6 text-indigo-800">
+          Students have noticeably different levels of understanding.
+          Some may need additional support while others are ready to
+          move forward.
+        </p>
+
+        <ul className="mt-4 space-y-2">
+          {mixedUnderstandingPulses.map((pulse) => {
+            const lowResponses =
+              pulse.distribution["1"] + pulse.distribution["2"];
+
+            const highResponses =
+              pulse.distribution["4"] + pulse.distribution["5"];
+
+            const lowPercentage = Math.round(
+              (lowResponses / pulse.totalResponses) * 100,
+            );
+
+            const highPercentage = Math.round(
+              (highResponses / pulse.totalResponses) * 100,
+            );
+
+            return (
+              <li
+                key={pulse.id}
+                className="rounded-xl bg-white/80 p-3"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-sm font-bold text-slate-800">
+                    {pulse.concept}
+                  </span>
+
+                  <span className="text-sm font-bold text-indigo-800">
+                    {pulse.averageScore}/5
+                  </span>
+                </div>
+
+                <p className="mt-2 text-xs leading-5 text-slate-600">
+                  {lowResponses} students struggling ({lowPercentage}%)
+                  {" · "}
+                  {highResponses} students confident ({highPercentage}%)
+                </p>
+
+                <p className="mt-1 text-xs text-slate-400">
+                  Based on {pulse.totalResponses} responses
+                </p>
+              </li>
+            );
+          })}
+        </ul>
+      </div>
+    </div>
+  </div>
+)}
 
                 {/* Create Pulse */}
                 {session.isActive && (
