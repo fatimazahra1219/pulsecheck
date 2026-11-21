@@ -16,12 +16,19 @@ type PulseRecord = {
   };
   concept: string;
   question: string;
+  mode?: "rating" | "knowledge_check";
+  answerOptions?: Array<{
+    id: string;
+    text: string;
+  }>;
   isActive: boolean;
   isPaused?: boolean;
   createdAt: Date;
   responses: Array<{
     anonymousId: string;
     score: number;
+    selectedOptionId?: string;
+    isCorrect?: boolean;
   }>;
 };
 
@@ -100,6 +107,103 @@ export async function POST(request: Request, { params }: RouteContext) {
       );
     }
 
+    // Determine the Pulse mode. Existing requests default to rating.
+    const mode = payload.mode ?? "rating";
+
+    if (mode !== "rating" && mode !== "knowledge_check") {
+      return NextResponse.json(
+        { error: "Invalid Pulse mode." },
+        { status: 400 },
+      );
+    }
+
+    let answerOptions: Array<{ id: string; text: string }> = [];
+    let correctOptionId: string | undefined;
+    let explanation: string | undefined;
+
+    if (mode === "knowledge_check") {
+      if (!Array.isArray(payload.answerOptions)) {
+        return NextResponse.json(
+          { error: "Answer options are required." },
+          { status: 400 },
+        );
+      }
+
+      if (
+        payload.answerOptions.length < 2 ||
+        payload.answerOptions.length > 4
+      ) {
+        return NextResponse.json(
+          { error: "A knowledge check must have between 2 and 4 options." },
+          { status: 400 },
+        );
+      }
+
+      const validOptions = payload.answerOptions.every((option: unknown) => {
+        if (!option || typeof option !== "object" || Array.isArray(option)) {
+          return false;
+        }
+
+        const item = option as Record<string, unknown>;
+
+        return (
+          typeof item.id === "string" &&
+          item.id.trim().length > 0 &&
+          item.id.trim().length <= 20 &&
+          typeof item.text === "string" &&
+          item.text.trim().length > 0 &&
+          item.text.trim().length <= 200
+        );
+      });
+
+      if (!validOptions) {
+        return NextResponse.json(
+          { error: "Each option needs a valid ID and text." },
+          { status: 400 },
+        );
+      }
+
+      answerOptions = payload.answerOptions.map(
+        (option: { id: string; text: string }) => ({
+          id: option.id.trim(),
+          text: option.text.trim(),
+        }),
+      );
+
+      const optionIds = answerOptions.map((option) => option.id);
+
+      if (new Set(optionIds).size !== optionIds.length) {
+        return NextResponse.json(
+          { error: "Answer option IDs must be unique." },
+          { status: 400 },
+        );
+      }
+
+      if (
+        typeof payload.correctOptionId !== "string" ||
+        !optionIds.includes(payload.correctOptionId.trim())
+      ) {
+        return NextResponse.json(
+          { error: "The correct answer must match one of the options." },
+          { status: 400 },
+        );
+      }
+
+      correctOptionId = payload.correctOptionId.trim();
+      if (
+        typeof payload.explanation !== "string" ||
+        !payload.explanation.trim() ||
+        payload.explanation.trim().length > 1000
+      ) {
+        return NextResponse.json(
+          { error: "An explanation of 1–1000 characters is required." },
+          { status: 400 },
+        );
+      }
+
+      explanation = payload.explanation.trim();
+    }
+
     await connectDB();
 
     // Find the active classroom.
@@ -124,6 +228,14 @@ export async function POST(request: Request, { params }: RouteContext) {
     session.pulses.push({
       concept,
       question,
+      mode,
+      ...(mode === "knowledge_check"
+        ? {
+            answerOptions,
+            correctOptionId,
+            explanation,
+          }
+        : {}),
       isActive: true,
       responses: [],
     });
@@ -140,6 +252,7 @@ export async function POST(request: Request, { params }: RouteContext) {
           id: newPulse._id.toString(),
           concept: newPulse.concept,
           question: newPulse.question,
+          mode: newPulse.mode,
           isActive: newPulse.isActive,
           totalResponses: newPulse.responses.length,
         },
@@ -227,6 +340,7 @@ export async function GET(request: Request, { params }: RouteContext) {
         id: pulse._id.toString(),
         concept: pulse.concept,
         question: pulse.question,
+        mode: pulse.mode ?? "rating",
         isActive: pulse.isActive,
         isPaused: Boolean(pulse.isPaused),
         totalResponses,

@@ -16,8 +16,22 @@ type ActivePulseRecord = {
   };
   concept: string;
   question: string;
+  mode?: "rating" | "knowledge_check";
+  answerOptions?: Array<{
+    id: string;
+    text: string;
+  }>;
+  correctOptionId?: string;
+  explanation?: string;
   isActive: boolean;
   isPaused?: boolean;
+  createdAt: Date;
+  responses: Array<{
+    anonymousId: string;
+    score: number;
+    selectedOptionId?: string;
+    isCorrect?: boolean;
+  }>;
 };
 
 // Retrieve an active classroom session.
@@ -50,6 +64,58 @@ export async function GET(request: Request, { params }: RouteContext) {
     const pulseRecords = session.pulses as unknown as ActivePulseRecord[];
 
     const activePulse = pulseRecords.find((pulse) => pulse.isActive);
+    // Identify the student using their anonymous browser ID.
+    const anonymousId = request.headers.get("x-pulsecheck-anonymous-id");
+
+    const validAnonymousId =
+      typeof anonymousId === "string" &&
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+        anonymousId,
+      );
+
+    // Find the latest completed Knowledge Check answered by this student.
+    // Find the most recently created Pulse in the classroom.
+const latestPulse = [...pulseRecords].sort(
+  (a, b) =>
+    new Date(b.createdAt).getTime() -
+    new Date(a.createdAt).getTime(),
+)[0];
+
+// Feedback belongs only to the most recent Pulse.
+// It is available only after that Pulse has ended.
+const completedPulse =
+  validAnonymousId &&
+  latestPulse &&
+  !latestPulse.isActive &&
+  latestPulse.mode === "knowledge_check"
+    ? latestPulse
+    : undefined;
+
+// Find this student's response to that specific Pulse.
+const studentResponse = completedPulse?.responses.find(
+  (response) =>
+    response.anonymousId === anonymousId &&
+    typeof response.isCorrect === "boolean",
+);
+
+    // Release feedback only after completion and only to a student who answered.
+    const feedback =
+      completedPulse &&
+      studentResponse &&
+      completedPulse.correctOptionId &&
+      completedPulse.explanation
+        ? {
+            pulseId: completedPulse._id.toString(),
+            concept: completedPulse.concept,
+            question: completedPulse.question,
+            answerOptions: completedPulse.answerOptions ?? [],
+            selectedOptionId: studentResponse.selectedOptionId,
+            confidenceScore: studentResponse.score,
+            isCorrect: studentResponse.isCorrect,
+            correctOptionId: completedPulse.correctOptionId,
+            explanation: completedPulse.explanation,
+          }
+        : null;
 
     return NextResponse.json({
       session: {
@@ -63,9 +129,15 @@ export async function GET(request: Request, { params }: RouteContext) {
             id: activePulse._id.toString(),
             concept: activePulse.concept,
             question: activePulse.question,
+            mode: activePulse.mode ?? "rating",
+            answerOptions:
+              activePulse.mode === "knowledge_check"
+                ? (activePulse.answerOptions ?? [])
+                : [],
             isPaused: Boolean(activePulse.isPaused),
           }
         : null,
+        feedback,
     });
   } catch (error) {
     console.error("Session lookup failed:", error);

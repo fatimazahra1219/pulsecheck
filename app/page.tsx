@@ -26,6 +26,7 @@ type Pulse = {
   id: string;
   concept: string;
   question: string;
+  mode?: "rating" | "knowledge_check";
   isActive: boolean;
   isPaused: boolean;
   totalResponses: number;
@@ -78,8 +79,23 @@ export default function Home() {
   const sessionCode = session?.code;
 
   // Pulse form
+  // Pulse form
   const [concept, setConcept] = useState("");
   const [question, setQuestion] = useState("");
+
+  const [pulseMode, setPulseMode] = useState<"rating" | "knowledge_check">(
+    "rating",
+  );
+
+  const [answerOptions, setAnswerOptions] = useState([
+    { id: "A", text: "" },
+    { id: "B", text: "" },
+    { id: "C", text: "" },
+    { id: "D", text: "" },
+  ]);
+
+  const [correctOptionId, setCorrectOptionId] = useState("A");
+  const [explanation, setExplanation] = useState("");
 
   // Existing Pulses
   const [pulses, setPulses] = useState<Pulse[]>([]);
@@ -185,8 +201,41 @@ export default function Home() {
 
     if (!session || !session.isActive) return;
 
-    setCreatingPulse(true);
     setPulsesError("");
+
+    // Keep only options that contain text.
+    const preparedAnswerOptions = answerOptions
+      .filter((option) => option.text.trim().length > 0)
+      .map((option) => ({
+        id: option.id,
+        text: option.text.trim(),
+      }));
+
+    // Validate the knowledge-check configuration.
+    if (pulseMode === "knowledge_check") {
+      if (preparedAnswerOptions.length < 2) {
+        setPulsesError("Please provide at least two answer options.");
+        return;
+      }
+
+      if (
+        !preparedAnswerOptions.some((option) => option.id === correctOptionId)
+      ) {
+        setPulsesError("Please select one of your filled options as correct.");
+        return;
+      }
+      if (!explanation.trim()) {
+        setPulsesError("Please provide an explanation for the correct answer.");
+        return;
+      }
+
+      if (explanation.trim().length > 1000) {
+        setPulsesError("The explanation cannot exceed 1000 characters.");
+        return;
+      }
+    }
+
+    setCreatingPulse(true);
 
     try {
       const response = await fetch(
@@ -199,6 +248,14 @@ export default function Home() {
           body: JSON.stringify({
             concept: concept.trim(),
             question: question.trim(),
+            mode: pulseMode,
+            ...(pulseMode === "knowledge_check"
+              ? {
+                  answerOptions: preparedAnswerOptions,
+                  correctOptionId,
+                  explanation: explanation.trim(),
+                }
+              : {}),
           }),
         },
       );
@@ -212,9 +269,18 @@ export default function Home() {
         throw new Error(data.error || "Unable to create Pulse.");
       }
 
-      // Clear the form.
+      // Reset the form after successful creation.
       setConcept("");
       setQuestion("");
+      setPulseMode("rating");
+      setExplanation("");
+      setAnswerOptions([
+        { id: "A", text: "" },
+        { id: "B", text: "" },
+        { id: "C", text: "" },
+        { id: "D", text: "" },
+      ]);
+      setCorrectOptionId("A");
 
       // Retrieve the updated Pulse list.
       setPulseRefresh((current) => current + 1);
@@ -1096,87 +1162,89 @@ export default function Home() {
                 )}
 
                 {/* Mixed understanding alerts */}
-{!pulsesLoading && mixedUnderstandingPulses.length > 0 && (
-  <div
-    role="status"
-    className="mt-4 rounded-2xl border border-indigo-200 bg-indigo-50 p-4 sm:p-5"
-  >
-    <div className="flex items-start gap-3">
-      <span
-        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-indigo-100 text-lg font-bold text-indigo-700"
-        aria-hidden="true"
-      >
-        ↔
-      </span>
+                {!pulsesLoading && mixedUnderstandingPulses.length > 0 && (
+                  <div
+                    role="status"
+                    className="mt-4 rounded-2xl border border-indigo-200 bg-indigo-50 p-4 sm:p-5"
+                  >
+                    <div className="flex items-start gap-3">
+                      <span
+                        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-indigo-100 text-lg font-bold text-indigo-700"
+                        aria-hidden="true"
+                      >
+                        ↔
+                      </span>
 
-      <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-center gap-2">
-          <h3 className="font-bold text-indigo-950">
-            Mixed understanding detected
-          </h3>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h3 className="font-bold text-indigo-950">
+                            Mixed understanding detected
+                          </h3>
 
-          <span className="rounded-full bg-indigo-100 px-2.5 py-1 text-xs font-semibold text-indigo-800">
-            {mixedUnderstandingPulses.length}{" "}
-            {mixedUnderstandingPulses.length === 1
-              ? "concept"
-              : "concepts"}
-          </span>
-        </div>
+                          <span className="rounded-full bg-indigo-100 px-2.5 py-1 text-xs font-semibold text-indigo-800">
+                            {mixedUnderstandingPulses.length}{" "}
+                            {mixedUnderstandingPulses.length === 1
+                              ? "concept"
+                              : "concepts"}
+                          </span>
+                        </div>
 
-        <p className="mt-1 text-sm leading-6 text-indigo-800">
-          Students have noticeably different levels of understanding.
-          Some may need additional support while others are ready to
-          move forward.
-        </p>
+                        <p className="mt-1 text-sm leading-6 text-indigo-800">
+                          Students have noticeably different levels of
+                          understanding. Some may need additional support while
+                          others are ready to move forward.
+                        </p>
 
-        <ul className="mt-4 space-y-2">
-          {mixedUnderstandingPulses.map((pulse) => {
-            const lowResponses =
-              pulse.distribution["1"] + pulse.distribution["2"];
+                        <ul className="mt-4 space-y-2">
+                          {mixedUnderstandingPulses.map((pulse) => {
+                            const lowResponses =
+                              pulse.distribution["1"] + pulse.distribution["2"];
 
-            const highResponses =
-              pulse.distribution["4"] + pulse.distribution["5"];
+                            const highResponses =
+                              pulse.distribution["4"] + pulse.distribution["5"];
 
-            const lowPercentage = Math.round(
-              (lowResponses / pulse.totalResponses) * 100,
-            );
+                            const lowPercentage = Math.round(
+                              (lowResponses / pulse.totalResponses) * 100,
+                            );
 
-            const highPercentage = Math.round(
-              (highResponses / pulse.totalResponses) * 100,
-            );
+                            const highPercentage = Math.round(
+                              (highResponses / pulse.totalResponses) * 100,
+                            );
 
-            return (
-              <li
-                key={pulse.id}
-                className="rounded-xl bg-white/80 p-3"
-              >
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="text-sm font-bold text-slate-800">
-                    {pulse.concept}
-                  </span>
+                            return (
+                              <li
+                                key={pulse.id}
+                                className="rounded-xl bg-white/80 p-3"
+                              >
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                  <span className="text-sm font-bold text-slate-800">
+                                    {pulse.concept}
+                                  </span>
 
-                  <span className="text-sm font-bold text-indigo-800">
-                    {pulse.averageScore}/5
-                  </span>
-                </div>
+                                  <span className="text-sm font-bold text-indigo-800">
+                                    {pulse.averageScore}/5
+                                  </span>
+                                </div>
 
-                <p className="mt-2 text-xs leading-5 text-slate-600">
-                  {lowResponses} students struggling ({lowPercentage}%)
-                  {" · "}
-                  {highResponses} students confident ({highPercentage}%)
-                </p>
+                                <p className="mt-2 text-xs leading-5 text-slate-600">
+                                  {lowResponses} students struggling (
+                                  {lowPercentage}%)
+                                  {" · "}
+                                  {highResponses} students confident (
+                                  {highPercentage}%)
+                                </p>
 
-                <p className="mt-1 text-xs text-slate-400">
-                  Based on {pulse.totalResponses} responses
-                </p>
-              </li>
-            );
-          })}
-        </ul>
-      </div>
-    </div>
-  </div>
-)}
+                                <p className="mt-1 text-xs text-slate-400">
+                                  Based on {pulse.totalResponses} responses
+                                </p>
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 {/* Create Pulse */}
                 {session.isActive && (
@@ -1187,6 +1255,39 @@ export default function Home() {
                     <h3 className="font-bold text-slate-900">
                       Ask a new Pulse
                     </h3>
+
+                    <div className="mt-4">
+                      <label
+                        htmlFor="pulseMode"
+                        className="mb-2 block text-sm font-semibold text-slate-700"
+                      >
+                        Choose Pulse type
+                      </label>
+
+                      <select
+                        id="pulseMode"
+                        value={pulseMode}
+                        onChange={(event) =>
+                          setPulseMode(
+                            event.target.value as "rating" | "knowledge_check",
+                          )
+                        }
+                        className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium outline-none transition focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100"
+                      >
+                        <option value="rating">
+                          Quick understanding — confidence rating (1–5)
+                        </option>
+                        <option value="knowledge_check">
+                          Confidence + Knowledge Check
+                        </option>
+                      </select>
+
+                      <p className="mt-2 text-xs leading-5 text-slate-500">
+                        {pulseMode === "rating"
+                          ? "Students rate how well they understand the concept."
+                          : "Students rate their confidence and answer a multiple-choice question."}
+                      </p>
+                    </div>
 
                     <div className="mt-4 grid gap-4 md:grid-cols-[1fr_1.6fr]">
                       <div>
@@ -1213,40 +1314,141 @@ export default function Home() {
                           htmlFor="question"
                           className="mb-1.5 block text-sm font-semibold text-slate-700"
                         >
-                          Question for students
+                          {pulseMode === "knowledge_check"
+                            ? "Multiple-choice question"
+                            : "Question for students"}
                         </label>
+
                         <input
                           id="question"
                           type="text"
                           value={question}
                           onChange={(event) => setQuestion(event.target.value)}
                           maxLength={300}
-                          placeholder="How well do you understand this concept?"
+                          placeholder={
+                            pulseMode === "knowledge_check"
+                              ? "e.g. Which array method returns a new filtered array?"
+                              : "How well do you understand this concept?"
+                          }
                           required
                           className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition placeholder:text-slate-400 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100"
                         />
                       </div>
                     </div>
 
-                    <div className="mt-3 flex flex-wrap items-center gap-2">
-                      <span className="text-xs font-medium text-slate-500">
-                        Quick questions:
-                      </span>
-                      {[
-                        "How well do you understand this concept?",
-                        "Could you explain this to a classmate?",
-                        "How confident are you using this on your own?",
-                      ].map((suggestion) => (
-                        <button
-                          key={suggestion}
-                          type="button"
-                          onClick={() => setQuestion(suggestion)}
-                          className="rounded-full bg-white px-3 py-1.5 text-xs font-medium text-slate-600 ring-1 ring-slate-200 transition hover:text-indigo-700 hover:ring-indigo-300"
+                    {pulseMode === "knowledge_check" && (
+                      <div className="mt-5 rounded-xl bg-white p-4 ring-1 ring-indigo-100">
+                        <h4 className="font-bold text-slate-900">
+                          Answer options
+                        </h4>
+
+                        <p className="mt-1 text-xs leading-5 text-slate-500">
+                          Fill in at least two options. Select the radio button
+                          beside the correct answer.
+                        </p>
+
+                        <div className="mt-4 space-y-3">
+                          {answerOptions.map((option, index) => (
+                            <div
+                              key={option.id}
+                              className="rounded-xl border border-slate-200 p-3"
+                            >
+                              <label
+                                htmlFor={`answer-option-${option.id}`}
+                                className="mb-2 block text-sm font-semibold text-slate-700"
+                              >
+                                Option {option.id}
+                                {index < 2 && (
+                                  <span className="ml-1 text-rose-600">*</span>
+                                )}
+                              </label>
+
+                              <input
+                                id={`answer-option-${option.id}`}
+                                type="text"
+                                value={option.text}
+                                onChange={(event) =>
+                                  setAnswerOptions((current) =>
+                                    current.map((item) =>
+                                      item.id === option.id
+                                        ? { ...item, text: event.target.value }
+                                        : item,
+                                    ),
+                                  )
+                                }
+                                placeholder={`Enter answer ${option.id}`}
+                                maxLength={200}
+                                required={index < 2}
+                                className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm outline-none transition focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-100"
+                              />
+
+                              <label className="mt-3 flex cursor-pointer items-center gap-2 text-sm font-medium text-slate-700">
+                                <input
+                                  type="radio"
+                                  name="correctOptionId"
+                                  value={option.id}
+                                  checked={correctOptionId === option.id}
+                                  disabled={!option.text.trim()}
+                                  onChange={() => setCorrectOptionId(option.id)}
+                                  className="h-4 w-4 accent-indigo-600"
+                                />
+                                This is the correct answer
+                              </label>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {pulseMode === "knowledge_check" && (
+                      <div className="mt-4">
+                        <label
+                          htmlFor="explanation"
+                          className="mb-1.5 block text-sm font-semibold text-slate-700"
                         >
-                          {suggestion}
-                        </button>
-                      ))}
-                    </div>
+                          Explanation of the correct answer
+                        </label>
+
+                        <textarea
+                          id="explanation"
+                          value={explanation}
+                          onChange={(event) =>
+                            setExplanation(event.target.value)
+                          }
+                          placeholder="Explain why this answer is correct and help students understand the concept..."
+                          maxLength={1000}
+                          rows={4}
+                          required
+                          className="w-full resize-y rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm leading-6 outline-none transition placeholder:text-slate-400 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100"
+                        />
+
+                        <p className="mt-1 text-right text-xs text-slate-400">
+                          {explanation.length}/1000 characters
+                        </p>
+                      </div>
+                    )}
+
+                    {pulseMode === "rating" && (
+                      <div className="mt-3 flex flex-wrap items-center gap-2">
+                        <span className="text-xs font-medium text-slate-500">
+                          Quick questions:
+                        </span>
+                        {[
+                          "How well do you understand this concept?",
+                          "Could you explain this to a classmate?",
+                          "How confident are you using this on your own?",
+                        ].map((suggestion) => (
+                          <button
+                            key={suggestion}
+                            type="button"
+                            onClick={() => setQuestion(suggestion)}
+                            className="rounded-full bg-white px-3 py-1.5 text-xs font-medium text-slate-600 ring-1 ring-slate-200 transition hover:text-indigo-700 hover:ring-indigo-300"
+                          >
+                            {suggestion}
+                          </button>
+                        ))}
+                      </div>
+                    )}
 
                     {pulsesError && (
                       <p
@@ -1264,7 +1466,11 @@ export default function Home() {
                       }
                       className="mt-5 w-full rounded-xl bg-indigo-600 px-5 py-3 text-sm font-bold text-white shadow-sm shadow-indigo-600/30 transition hover:bg-indigo-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
                     >
-                      {creatingPulse ? "Sending to students..." : "Send Pulse"}
+                      {creatingPulse
+                        ? "Creating..."
+                        : pulseMode === "knowledge_check"
+                          ? "Create Knowledge Check"
+                          : "Send Pulse"}
                     </button>
                   </form>
                 )}

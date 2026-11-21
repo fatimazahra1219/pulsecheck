@@ -12,12 +12,33 @@ type ActivePulse = {
   id: string;
   concept: string;
   question: string;
+  mode: "rating" | "knowledge_check";
+  answerOptions: Array<{
+    id: string;
+    text: string;
+  }>;
   isPaused: boolean;
+};
+
+type StudentFeedback = {
+  pulseId: string;
+  concept: string;
+  question: string;
+  answerOptions: Array<{
+    id: string;
+    text: string;
+  }>;
+  selectedOptionId?: string;
+  confidenceScore: number;
+  isCorrect: boolean;
+  correctOptionId: string;
+  explanation: string;
 };
 
 type JoinResponse = {
   session?: Session;
   activePulse?: ActivePulse | null;
+  feedback?: StudentFeedback | null;
   error?: string;
 };
 
@@ -32,8 +53,14 @@ export default function JoinPage() {
   const [session, setSession] = useState<Session | null>(null);
   const [activePulse, setActivePulse] = useState<ActivePulse | null>(null);
   const [sessionEnded, setSessionEnded] = useState(false);
+  const [feedback, setFeedback] = useState<StudentFeedback | null>(null);
 
   const [score, setScore] = useState<number | null>(null);
+  const [selectedOptionId, setSelectedOptionId] = useState<string | null>(null);
+
+  const [knowledgeStep, setKnowledgeStep] = useState<"answer" | "confidence">(
+    "answer",
+  );
 
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -53,12 +80,21 @@ export default function JoinPage() {
     setSession(null);
     setActivePulse(null);
     setScore(null);
+    setSelectedOptionId(null);
+    setKnowledgeStep("answer");
     setSubmitted(false);
     setResponseError("");
 
     try {
+      const anonymousId = localStorage.getItem("pulsecheck-anonymous-id");
+
       const response = await fetch(
         `/api/sessions/${encodeURIComponent(code.trim().toUpperCase())}`,
+        {
+          headers: anonymousId
+            ? { "x-pulsecheck-anonymous-id": anonymousId }
+            : {},
+        },
       );
 
       const data: JoinResponse = await response.json();
@@ -73,6 +109,7 @@ export default function JoinPage() {
 
       setSession(data.session);
       setActivePulse(data.activePulse ?? null);
+      setFeedback(data.feedback ?? null);
 
       // Check whether this browser already answered this Pulse.
       if (data.activePulse) {
@@ -89,10 +126,16 @@ export default function JoinPage() {
 
   // Submit an answer to the specific active Pulse.
   async function handleSubmitResponse() {
-    if (!session || !activePulse || activePulse.isPaused || score === null) {
+    if (
+      !session ||
+      !activePulse ||
+      activePulse.isPaused ||
+      score === null ||
+      (activePulse.mode === "knowledge_check" &&
+        (selectedOptionId === null || knowledgeStep !== "confidence"))
+    ) {
       return;
     }
-
     setSubmitting(true);
     setResponseError("");
 
@@ -117,6 +160,10 @@ export default function JoinPage() {
           body: JSON.stringify({
             anonymousId,
             score,
+            ...(activePulse.mode === "knowledge_check" &&
+            selectedOptionId !== null
+              ? { selectedOptionId }
+              : {}),
           }),
         },
       );
@@ -154,7 +201,13 @@ export default function JoinPage() {
       requestInProgress = true;
 
       try {
-        const response = await fetch(`/api/sessions/${sessionCode}`);
+        const anonymousId = localStorage.getItem("pulsecheck-anonymous-id");
+
+        const response = await fetch(`/api/sessions/${sessionCode}`, {
+          headers: anonymousId
+            ? { "x-pulsecheck-anonymous-id": anonymousId }
+            : {},
+        });
 
         // The classroom has ended or is no longer available.
         if (response.status === 404) {
@@ -175,6 +228,7 @@ export default function JoinPage() {
         if (cancelled) return;
 
         const nextPulse = data.activePulse ?? null;
+        setFeedback(data.feedback ?? null);
 
         setSessionEnded(false);
 
@@ -193,7 +247,9 @@ export default function JoinPage() {
         // Only reset the student's answer when a different Pulse starts.
         if (pulseChanged) {
           setScore(null);
+          setSelectedOptionId(null);
           setResponseError("");
+          setKnowledgeStep("answer");
 
           if (nextPulse) {
             const storageKey = `pulsecheck-submitted:${sessionCode}:${nextPulse.id}`;
@@ -228,11 +284,49 @@ export default function JoinPage() {
     setActivePulse(null);
     setCode("");
     setScore(null);
+    setSelectedOptionId(null);
+    setKnowledgeStep("answer");
     setSubmitted(false);
     setError("");
     setResponseError("");
     setSessionEnded(false);
+    setFeedback(null);
   }
+
+  // Different labels for understanding and confidence.
+  const scaleLabels =
+    activePulse?.mode === "knowledge_check"
+      ? [
+          "Not confident at all",
+          "A little confident",
+          "Not sure",
+          "Confident",
+          "Very confident",
+        ]
+      : [
+          "Totally lost",
+          "Not really",
+          "Getting there",
+          "Mostly got it",
+          "Completely got it",
+        ];
+
+  const scaleDescriptions =
+    activePulse?.mode === "knowledge_check"
+      ? [
+          "I'm mostly guessing",
+          "I have doubts about my answer",
+          "I could be right, but I'm unsure",
+          "I believe my answer is correct",
+          "I'm certain and can explain why",
+        ]
+      : [
+          "I need this explained again",
+          "I am confused about parts of it",
+          "I understand some of it",
+          "I only have small questions",
+          "I could teach this to someone",
+        ];
 
   return (
     <main className="flex min-h-[100dvh] flex-col bg-[#f6f6fb] px-4 py-6 text-slate-900 antialiased sm:py-10">
@@ -359,8 +453,106 @@ export default function JoinPage() {
             </section>
           )}
 
+          {/* ---------- Post-Pulse learning feedback ---------- */}
+          {session && !sessionEnded && feedback && !activePulse && (
+            <section className="mb-6 rounded-3xl bg-white p-6 shadow-sm ring-1 ring-slate-200/70">
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-sm font-bold text-indigo-600">
+                  Your learning feedback
+                </span>
+
+                <span
+                  className={`rounded-full px-3 py-1 text-xs font-bold ${
+                    feedback.isCorrect
+                      ? "bg-emerald-100 text-emerald-800"
+                      : "bg-amber-100 text-amber-800"
+                  }`}
+                >
+                  {feedback.isCorrect ? "Correct answer ✓" : "Not quite"}
+                </span>
+              </div>
+
+              <h2 className="mt-4 text-2xl font-extrabold text-slate-950">
+                {feedback.concept}
+              </h2>
+
+              <p className="mt-2 text-sm leading-6 text-slate-600">
+                {feedback.question}
+              </p>
+
+              <div className="mt-5 grid grid-cols-2 gap-3">
+                <div className="rounded-xl bg-slate-50 p-4">
+                  <p className="text-xs font-medium text-slate-500">
+                    Your confidence
+                  </p>
+                  <p className="mt-1 text-2xl font-extrabold">
+                    {feedback.confidenceScore}/5
+                  </p>
+                </div>
+
+                <div
+                  className={`rounded-xl p-4 ${
+                    feedback.isCorrect ? "bg-emerald-50" : "bg-amber-50"
+                  }`}
+                >
+                  <p className="text-xs font-medium text-slate-500">
+                    Your result
+                  </p>
+                  <p className="mt-1 text-lg font-extrabold">
+                    {feedback.isCorrect ? "Correct" : "Incorrect"}
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-5 space-y-3">
+                <div className="rounded-xl border border-slate-200 p-4">
+                  <p className="text-xs font-bold uppercase tracking-wide text-slate-500">
+                    Your answer
+                  </p>
+                  <p className="mt-2 font-semibold text-slate-800">
+                    {feedback.answerOptions.find(
+                      (option) => option.id === feedback.selectedOptionId,
+                    )?.text ?? "Not available"}
+                  </p>
+                </div>
+
+                <div className="rounded-xl border border-emerald-200 bg-emerald-50/50 p-4">
+                  <p className="text-xs font-bold uppercase tracking-wide text-emerald-800">
+                    Correct answer
+                  </p>
+                  <p className="mt-2 font-semibold text-slate-900">
+                    {feedback.answerOptions.find(
+                      (option) => option.id === feedback.correctOptionId,
+                    )?.text ?? "Not available"}
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-5 rounded-2xl bg-indigo-50 p-4">
+                <h3 className="font-bold text-indigo-950">
+                  Why is this correct?
+                </h3>
+                <p className="mt-2 text-sm leading-6 text-indigo-900">
+                  {feedback.explanation}
+                </p>
+              </div>
+
+              <div className="mt-4 rounded-xl bg-slate-50 p-4">
+                <p className="text-sm font-semibold text-slate-900">
+                  {feedback.isCorrect
+                    ? feedback.confidenceScore >= 4
+                      ? "Excellent! Your confidence matched your knowledge."
+                      : "You got it right! You might know more than you think."
+                    : feedback.confidenceScore >= 4
+                      ? "You felt confident, but this question revealed something worth revisiting."
+                      : "This concept may need more practice. That's exactly what this check is designed to reveal."}
+                </p>
+              </div>
+            </section>
+          )}
+
           {/* ---------- Joined, waiting for a Pulse ---------- */}
-          {session && !sessionEnded && !activePulse && (
+          {session && !sessionEnded && !activePulse && !feedback && (
             <section className="rounded-3xl bg-white p-8 text-center shadow-sm ring-1 ring-slate-200/70">
               <div className="relative mx-auto flex h-16 w-16 items-center justify-center">
                 <span className="absolute inset-0 animate-ping motion-reduce:animate-none rounded-full bg-indigo-200 motion-reduce:animate-none" />
@@ -467,81 +659,203 @@ export default function JoinPage() {
                 </p>
               )}
 
-              {/* Scale */}
-              <div
-                role="radiogroup"
-                aria-label="Your understanding level"
-                className="mt-6 space-y-2.5"
-              >
-                {[1, 2, 3, 4, 5].map((value) => {
-                  const selected = score === value;
+              {/* Knowledge check answer options */}
 
-                  return (
-                    <button
-                      key={value}
-                      type="button"
-                      role="radio"
-                      aria-checked={selected}
-                      onClick={() => setScore(value)}
-                      disabled={activePulse.isPaused || submitting}
-                      className={`flex w-full items-center gap-4 rounded-2xl p-3.5 text-left transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 disabled:cursor-not-allowed disabled:opacity-50 ${
-                        selected
-                          ? [
-                              "bg-rose-50 ring-2 ring-rose-500",
-                              "bg-orange-50 ring-2 ring-orange-400",
-                              "bg-amber-50 ring-2 ring-amber-400",
-                              "bg-lime-50 ring-2 ring-lime-500",
-                              "bg-emerald-50 ring-2 ring-emerald-500",
-                            ][value - 1]
-                          : "bg-white ring-1 ring-slate-200 hover:ring-slate-400 active:scale-[0.99]"
-                      }`}
+              {/* STEP 1: Choose an answer first */}
+              {activePulse.mode === "knowledge_check" &&
+                knowledgeStep === "answer" && (
+                  <div className="mt-6">
+                    <p className="text-xs font-bold uppercase tracking-wider text-indigo-600">
+                      Step 1 of 2
+                    </p>
+
+                    <h2 className="mt-2 text-xl font-extrabold text-slate-900">
+                      Choose your answer
+                    </h2>
+
+                    <p className="mt-1 text-sm leading-6 text-slate-500">
+                      Read the options and select the answer you believe is
+                      correct.
+                    </p>
+
+                    <div
+                      role="radiogroup"
+                      aria-label="Answer options"
+                      className="mt-4 space-y-3"
                     >
-                      <span
-                        className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-slate-50 text-2xl"
-                        aria-hidden="true"
-                      >
-                        {["😵", "😕", "😐", "🙂", "🤩"][value - 1]}
-                      </span>
+                      {activePulse.answerOptions.map((option, index) => {
+                        const selected = selectedOptionId === option.id;
 
-                      <span className="min-w-0 flex-1">
-                        <span className="block text-base font-bold text-slate-900">
-                          {
-                            [
-                              "Totally lost",
-                              "Not really",
-                              "Getting there",
-                              "Mostly got it",
-                              "Completely got it",
-                            ][value - 1]
-                          }
-                        </span>
-                        <span className="block text-sm text-slate-500">
-                          {
-                            [
-                              "I need this explained again",
-                              "I am confused about parts of it",
-                              "I understand some of it",
-                              "I only have small questions",
-                              "I could teach this to someone",
-                            ][value - 1]
-                          }
-                        </span>
-                      </span>
+                        return (
+                          <button
+                            key={option.id}
+                            type="button"
+                            role="radio"
+                            aria-checked={selected}
+                            onClick={() => setSelectedOptionId(option.id)}
+                            disabled={activePulse.isPaused || submitting}
+                            className={`flex w-full items-center gap-3 rounded-2xl border p-4 text-left transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 disabled:cursor-not-allowed disabled:opacity-50 ${
+                              selected
+                                ? "border-indigo-500 bg-indigo-50 ring-2 ring-indigo-200"
+                                : "border-slate-200 bg-white hover:border-indigo-300 hover:bg-indigo-50/30"
+                            }`}
+                          >
+                            <span
+                              className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-sm font-bold ${
+                                selected
+                                  ? "bg-indigo-600 text-white"
+                                  : "bg-slate-100 text-slate-600"
+                              }`}
+                              aria-hidden="true"
+                            >
+                              {String.fromCharCode(65 + index)}
+                            </span>
 
-                      <span
-                        className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-sm font-bold ${
-                          selected
-                            ? "bg-slate-900 text-white"
-                            : "bg-slate-100 text-slate-500"
-                        }`}
-                        aria-hidden="true"
-                      >
-                        {selected ? "✓" : value}
-                      </span>
+                            <span className="flex-1 text-sm font-semibold text-slate-800">
+                              {option.text}
+                            </span>
+
+                            {selected && (
+                              <span
+                                className="font-bold text-indigo-600"
+                                aria-hidden="true"
+                              >
+                                ✓
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => setKnowledgeStep("confidence")}
+                      disabled={
+                        activePulse.isPaused ||
+                        submitting ||
+                        selectedOptionId === null
+                      }
+                      className="mt-6 w-full rounded-2xl bg-indigo-600 px-5 py-4 text-base font-bold text-white shadow-md shadow-indigo-600/25 transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Continue to confidence →
                     </button>
-                  );
-                })}
-              </div>
+                  </div>
+                )}
+
+              {/* STEP 2: Rate confidence after choosing an answer */}
+              {(activePulse.mode === "rating" ||
+                knowledgeStep === "confidence") && (
+                <div className="mt-6">
+                  {activePulse.mode === "knowledge_check" && (
+                    <>
+                      <div className="rounded-2xl bg-indigo-50 p-4 ring-1 ring-indigo-100">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-indigo-600">
+                          Your selected answer
+                        </p>
+
+                        <p className="mt-2 font-bold text-slate-900">
+                          {
+                            activePulse.answerOptions.find(
+                              (option) => option.id === selectedOptionId,
+                            )?.text
+                          }
+                        </p>
+                      </div>
+
+                      <div className="mt-6">
+                        <p className="text-xs font-bold uppercase tracking-wider text-indigo-600">
+                          Step 2 of 2
+                        </p>
+
+                        <h2 className="mt-2 text-xl font-extrabold text-slate-900">
+                          How confident are you?
+                        </h2>
+
+                        <p className="mt-1 text-sm leading-6 text-slate-500">
+                          How sure are you that your selected answer is correct?
+                        </p>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setKnowledgeStep("answer");
+                          setScore(null);
+                        }}
+                        disabled={activePulse.isPaused || submitting}
+                        className="mt-3 text-sm font-semibold text-indigo-600 hover:text-indigo-800 disabled:opacity-50"
+                      >
+                        ← Change my answer
+                      </button>
+                    </>
+                  )}
+
+                  <div
+                    role="radiogroup"
+                    aria-label={
+                      activePulse.mode === "knowledge_check"
+                        ? "Your confidence level"
+                        : "Your understanding level"
+                    }
+                    className="mt-4 space-y-2.5"
+                  >
+                    {[1, 2, 3, 4, 5].map((value) => {
+                      const selected = score === value;
+
+                      return (
+                        <button
+                          key={value}
+                          type="button"
+                          role="radio"
+                          aria-checked={selected}
+                          onClick={() => setScore(value)}
+                          disabled={activePulse.isPaused || submitting}
+                          className={`flex w-full items-center gap-4 rounded-2xl p-3.5 text-left transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 disabled:cursor-not-allowed disabled:opacity-50 ${
+                            selected
+                              ? [
+                                  "bg-rose-50 ring-2 ring-rose-500",
+                                  "bg-orange-50 ring-2 ring-orange-400",
+                                  "bg-amber-50 ring-2 ring-amber-400",
+                                  "bg-lime-50 ring-2 ring-lime-500",
+                                  "bg-emerald-50 ring-2 ring-emerald-500",
+                                ][value - 1]
+                              : "bg-white ring-1 ring-slate-200 hover:ring-slate-400 active:scale-[0.99]"
+                          }`}
+                        >
+                          <span
+                            className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-slate-50 text-2xl"
+                            aria-hidden="true"
+                          >
+                            {["😵", "😕", "😐", "🙂", "🤩"][value - 1]}
+                          </span>
+
+                          <span className="min-w-0 flex-1">
+                            <span className="block text-base font-bold text-slate-900">
+                              {scaleLabels[value - 1]}
+                            </span>
+
+                            <span className="block text-sm text-slate-500">
+                              {scaleDescriptions[value - 1]}
+                            </span>
+                          </span>
+
+                          <span
+                            className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-sm font-bold ${
+                              selected
+                                ? "bg-slate-900 text-white"
+                                : "bg-slate-100 text-slate-500"
+                            }`}
+                            aria-hidden="true"
+                          >
+                            {selected ? "✓" : value}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
 
               {responseError && (
                 <p
@@ -552,20 +866,32 @@ export default function JoinPage() {
                 </p>
               )}
 
-              <button
-                type="button"
-                onClick={handleSubmitResponse}
-                disabled={activePulse.isPaused || submitting || score === null}
-                className="mt-6 w-full rounded-2xl bg-indigo-600 px-5 py-4 text-base font-bold text-white shadow-md shadow-indigo-600/25 transition hover:bg-indigo-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"
-              >
-                {activePulse.isPaused
-                  ? "Waiting for your teacher..."
-                  : submitting
-                    ? "Sending..."
-                    : score === null
-                      ? "Pick an answer"
-                      : "Send my answer"}
-              </button>
+              {(activePulse.mode === "rating" ||
+                knowledgeStep === "confidence") && (
+                <button
+                  type="button"
+                  onClick={handleSubmitResponse}
+                  disabled={
+                    activePulse.isPaused ||
+                    submitting ||
+                    score === null ||
+                    (activePulse.mode === "knowledge_check" &&
+                      selectedOptionId === null)
+                  }
+                  className="mt-6 w-full rounded-2xl bg-indigo-600 px-5 py-4 text-base font-bold text-white shadow-md shadow-indigo-600/25 transition hover:bg-indigo-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"
+                >
+                  {activePulse.isPaused
+                    ? "Waiting for your teacher..."
+                    : submitting
+                      ? "Sending..."
+                      : score === null
+                        ? "Rate your confidence"
+                        : activePulse.mode === "knowledge_check" &&
+                            selectedOptionId === null
+                          ? "Choose an answer"
+                          : "Send my answer"}
+                </button>
+              )}
 
               <p className="mt-3 text-center text-xs text-slate-500">
                 Your answer is anonymous. Your teacher only sees the totals.

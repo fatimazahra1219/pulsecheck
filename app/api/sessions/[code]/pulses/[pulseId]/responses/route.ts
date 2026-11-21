@@ -17,11 +17,19 @@ type PulseResponseRecord = {
   _id: {
     toString(): string;
   };
+  mode?: "rating" | "knowledge_check";
+  answerOptions?: Array<{
+    id: string;
+    text: string;
+  }>;
+  correctOptionId?: string;
   isActive: boolean;
   isPaused?: boolean;
   responses: Array<{
     anonymousId: string;
     score: number;
+    selectedOptionId?: string;
+    isCorrect?: boolean;
   }>;
 };
 
@@ -96,6 +104,121 @@ export async function POST(request: Request, { params }: RouteContext) {
 
     await connectDB();
 
+    // Load the Pulse to determine its mode and validate the answer.
+    const sessionForValidation = await Session.findOne({
+      code: normalizedCode,
+    }).select("isActive pulses");
+
+    if (!sessionForValidation || !sessionForValidation.isActive) {
+      return NextResponse.json(
+        { error: "Classroom not found or inactive." },
+        { status: 404 },
+      );
+    }
+
+    const validationPulseRecords =
+      sessionForValidation.pulses as unknown as PulseResponseRecord[];
+
+    const validationPulse = validationPulseRecords.find(
+      (item) => item._id.toString() === pulseId,
+    );
+
+    if (!validationPulse || !validationPulse.isActive) {
+      return NextResponse.json(
+        { error: "Pulse not found or no longer active." },
+        { status: 404 },
+      );
+    }
+
+    if (validationPulse.isPaused) {
+      return NextResponse.json(
+        {
+          error:
+            "This Pulse is paused. Please wait for your teacher to resume it.",
+        },
+        { status: 409 },
+      );
+    }
+
+    if (
+      (validationPulse.responses ?? []).some(
+        (item) => item.anonymousId === anonymousId,
+      )
+    ) {
+      return NextResponse.json(
+        { error: "You have already answered this Pulse." },
+        { status: 409 },
+      );
+    }
+
+    // Old Pulses without a mode are treated as rating Pulses.
+    const mode = validationPulse.mode ?? "rating";
+
+    // Prepare the response. Correctness is calculated by the server.
+    let responseToSave: {
+      anonymousId: string;
+      score: number;
+      selectedOptionId?: string;
+      isCorrect?: boolean;
+    } = {
+      anonymousId,
+      score,
+    };
+
+    if (mode === "knowledge_check") {
+      if (typeof payload.selectedOptionId !== "string") {
+        return NextResponse.json(
+          { error: "Please select an answer option." },
+          { status: 400 },
+        );
+      }
+
+      const selectedOptionId = payload.selectedOptionId.trim();
+      const answerOptions = validationPulse.answerOptions ?? [];
+      const correctOptionId = validationPulse.correctOptionId;
+
+      // Check that the question has a valid answer configuration.
+      if (
+        !correctOptionId ||
+        !answerOptions.some((option) => option.id === correctOptionId)
+      ) {
+        return NextResponse.json(
+          {
+            error:
+              "This knowledge check is not configured correctly. Please ask your teacher to recreate it.",
+          },
+          { status: 409 },
+        );
+      }
+
+      // The selected answer must belong to this Pulse.
+      if (!answerOptions.some((option) => option.id === selectedOptionId)) {
+        return NextResponse.json(
+          { error: "Invalid answer option." },
+          { status: 400 },
+        );
+      }
+
+      const isCorrect = selectedOptionId === correctOptionId;
+
+      responseToSave = {
+        anonymousId,
+        score,
+        selectedOptionId,
+        isCorrect,
+      };
+    } else if (mode !== "rating") {
+      return NextResponse.json(
+        { error: "This Pulse has an invalid mode." },
+        { status: 409 },
+      );
+    } else if (payload.selectedOptionId !== undefined) {
+      return NextResponse.json(
+        { error: "This rating Pulse does not accept answer options." },
+        { status: 400 },
+      );
+    }
+
     // Save the response inside the active Pulse.
     const updatedSession = await Session.findOneAndUpdate(
       {
@@ -114,10 +237,7 @@ export async function POST(request: Request, { params }: RouteContext) {
       },
       {
         $push: {
-          "pulses.$.responses": {
-            anonymousId,
-            score,
-          },
+          "pulses.$.responses": responseToSave,
         },
       },
       {

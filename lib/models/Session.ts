@@ -1,66 +1,95 @@
-import mongoose from "mongoose";
+import mongoose, { Schema } from "mongoose";
 
-// One student's anonymous answer.
-const ResponseSchema = new mongoose.Schema(
+const AnswerOptionSchema = new Schema(
+  {
+    id: {
+      type: String,
+      required: true,
+    },
+    text: {
+      type: String,
+      required: true,
+    },
+  },
+  { _id: false },
+);
+
+const ResponseSchema = new Schema(
   {
     anonymousId: {
       type: String,
       required: true,
     },
-
     score: {
       type: Number,
       required: true,
       min: 1,
       max: 5,
     },
-
+    selectedOptionId: {
+      type: String,
+      required: false,
+    },
+    isCorrect: {
+      type: Boolean,
+      required: false,
+    },
     createdAt: {
       type: Date,
       default: Date.now,
     },
   },
-  {
-    _id: false,
-  },
+  { _id: false },
 );
 
-// One understanding question inside a classroom session.
-const PulseSchema = new mongoose.Schema({
-  concept: {
-    type: String,
-    required: true,
-    trim: true,
-    maxlength: 100,
+const PulseSchema = new Schema(
+  {
+    concept: {
+      type: String,
+      required: true,
+    },
+    question: {
+      type: String,
+      required: true,
+    },
+    mode: {
+      type: String,
+      enum: ["rating", "knowledge_check"],
+      default: "rating",
+    },
+    answerOptions: {
+      type: [AnswerOptionSchema],
+      default: [],
+    },
+    correctOptionId: {
+      type: String,
+      required: false,
+    },
+    explanation: {
+      type: String,
+      required: false,
+      trim: true,
+      maxlength: 1000,
+    },
+    isActive: {
+      type: Boolean,
+      default: true,
+    },
+    isPaused: {
+      type: Boolean,
+      default: false,
+    },
+    createdAt: {
+      type: Date,
+      default: Date.now,
+    },
+    responses: {
+      type: [ResponseSchema],
+      default: [],
+    },
   },
-
-  question: {
-    type: String,
-    required: true,
-    trim: true,
-    maxlength: 300,
-  },
-
-  isActive: {
-    type: Boolean,
-    default: true,
-  },
-
-  isPaused: {
-    type: Boolean,
-    default: false,
-  },
-
-  createdAt: {
-    type: Date,
-    default: Date.now,
-  },
-
-  responses: {
-    type: [ResponseSchema],
-    default: [],
-  },
-});
+  { _id: true },
+);
 
 // The entire classroom session.
 const SessionSchema = new mongoose.Schema({
