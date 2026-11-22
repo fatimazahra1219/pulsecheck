@@ -21,6 +21,8 @@ type PulseRecord = {
     id: string;
     text: string;
   }>;
+  correctOptionId?: string;
+  explanation?: string;
   isActive: boolean;
   isPaused?: boolean;
   createdAt: Date;
@@ -330,6 +332,106 @@ export async function GET(request: Request, { params }: RouteContext) {
       }
 
       const totalResponses = pulse.responses.length;
+      // Keep only valid Knowledge Check responses.
+      const knowledgeCheckResponses = pulse.responses.filter(
+        (response) =>
+          Number.isInteger(response.score) &&
+          response.score >= 1 &&
+          response.score <= 5 &&
+          typeof response.isCorrect === "boolean" &&
+          typeof response.selectedOptionId === "string",
+      );
+
+      const isKnowledgeCheck = (pulse.mode ?? "rating") === "knowledge_check";
+
+      // Calculate the headline statistics and four confidence groups.
+      const correctResponses = knowledgeCheckResponses.filter(
+        (response) => response.isCorrect === true,
+      ).length;
+
+      const knowledgeCheckStats = isKnowledgeCheck
+        ? {
+            totalResponses: knowledgeCheckResponses.length,
+
+            correctResponses,
+
+            accuracyPercentage:
+              knowledgeCheckResponses.length > 0
+                ? Math.round(
+                    (correctResponses / knowledgeCheckResponses.length) * 100,
+                  )
+                : 0,
+
+            averageConfidence:
+              knowledgeCheckResponses.length > 0
+                ? Number(
+                    (
+                      knowledgeCheckResponses.reduce(
+                        (sum, response) => sum + response.score,
+                        0,
+                      ) / knowledgeCheckResponses.length
+                    ).toFixed(2),
+                  )
+                : 0,
+
+            confidentCorrect: knowledgeCheckResponses.filter(
+              (response) => response.score >= 4 && response.isCorrect === true,
+            ).length,
+
+            unsureCorrect: knowledgeCheckResponses.filter(
+              (response) => response.score <= 3 && response.isCorrect === true,
+            ).length,
+
+            unsureIncorrect: knowledgeCheckResponses.filter(
+              (response) => response.score <= 3 && response.isCorrect === false,
+            ).length,
+
+            confidentIncorrect: knowledgeCheckResponses.filter(
+              (response) => response.score >= 4 && response.isCorrect === false,
+            ).length,
+          }
+        : null;
+
+      // Calculate how many students selected each answer.
+      const answerDistribution = isKnowledgeCheck
+        ? (pulse.answerOptions ?? []).map((option) => {
+            const optionResponses = knowledgeCheckResponses.filter(
+              (response) => response.selectedOptionId === option.id,
+            );
+
+            const count = optionResponses.length;
+            // Count students who selected this option confidently and were wrong.
+const confidentIncorrectCount = optionResponses.filter(
+  (response) =>
+    response.score >= 4 && response.isCorrect === false,
+).length;
+
+            const averageConfidence =
+              count > 0
+                ? Number(
+                    (
+                      optionResponses.reduce(
+                        (sum, response) => sum + response.score,
+                        0,
+                      ) / count
+                    ).toFixed(2),
+                  )
+                : null;
+
+            return {
+              id: option.id,
+              text: option.text,
+              isCorrect: option.id === pulse.correctOptionId,
+              count,
+              confidentIncorrectCount,
+              percentage:
+                knowledgeCheckResponses.length > 0
+                  ? Math.round((count / knowledgeCheckResponses.length) * 100)
+                  : 0,
+              averageConfidence,
+            };
+          })
+        : null;
 
       const averageScore =
         totalResponses > 0
@@ -341,6 +443,15 @@ export async function GET(request: Request, { params }: RouteContext) {
         concept: pulse.concept,
         question: pulse.question,
         mode: pulse.mode ?? "rating",
+        ...(pulse.mode === "knowledge_check"
+          ? {
+              answerOptions: pulse.answerOptions ?? [],
+              correctOptionId: pulse.correctOptionId,
+              explanation: pulse.explanation ?? "",
+            }
+          : {}),
+        knowledgeCheckStats,
+        answerDistribution,
         isActive: pulse.isActive,
         isPaused: Boolean(pulse.isPaused),
         totalResponses,

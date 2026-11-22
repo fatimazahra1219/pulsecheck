@@ -1,6 +1,5 @@
 "use client";
-
-import { useEffect, useState, type FormEvent } from "react";
+import { Fragment, useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
 
 type Session = {
@@ -22,11 +21,40 @@ type PulseDistribution = {
   "5": number;
 };
 
+type KnowledgeCheckStats = {
+  totalResponses: number;
+  correctResponses: number;
+  accuracyPercentage: number;
+  averageConfidence: number;
+  confidentCorrect: number;
+  unsureCorrect: number;
+  unsureIncorrect: number;
+  confidentIncorrect: number;
+};
+
+type AnswerDistribution = {
+  id: string;
+  text: string;
+  isCorrect: boolean;
+  count: number;
+  percentage: number;
+  averageConfidence: number | null;
+  confidentIncorrectCount: number;
+};
 type Pulse = {
   id: string;
   concept: string;
   question: string;
   mode?: "rating" | "knowledge_check";
+  answerOptions?: Array<{
+    id: string;
+    text: string;
+  }>;
+
+  correctOptionId?: string;
+  explanation?: string;
+  knowledgeCheckStats?: KnowledgeCheckStats | null;
+  answerDistribution?: AnswerDistribution[] | null;
   isActive: boolean;
   isPaused: boolean;
   totalResponses: number;
@@ -100,6 +128,9 @@ export default function Home() {
   // Existing Pulses
   const [pulses, setPulses] = useState<Pulse[]>([]);
   const [pulsesLoading, setPulsesLoading] = useState(true);
+  const [showCompletedPulses, setShowCompletedPulses] = useState<
+    boolean | null
+  >(null);
 
   // Loading and errors
   const [creatingPulse, setCreatingPulse] = useState(false);
@@ -145,6 +176,7 @@ export default function Home() {
       }
 
       setSession(data.session);
+      localStorage.setItem("pulsecheck-selected-session", data.session.code);
       setHistoryRefresh((current) => current + 1);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Something went wrong.");
@@ -192,6 +224,36 @@ export default function Home() {
     } finally {
       setEnding(false);
     }
+  }
+
+  function handleBackToOverview() {
+    // Forget the selected classroom.
+    localStorage.removeItem("pulsecheck-selected-session");
+
+    // Return to the dashboard overview.
+    setSession(null);
+
+    // Clear classroom-specific information.
+    setResults(null);
+    setResultsError("");
+    setPulses([]);
+    setPulsesLoading(true);
+    setPulsesError("");
+    setPulseActionError("");
+    setEndError("");
+
+    // Reset the Pulse creation form.
+    setConcept("");
+    setQuestion("");
+    setPulseMode("rating");
+    setAnswerOptions([
+      { id: "A", text: "" },
+      { id: "B", text: "" },
+      { id: "C", text: "" },
+      { id: "D", text: "" },
+    ]);
+    setCorrectOptionId("A");
+    setExplanation("");
   }
 
   //sending the teacher's information to the backend.
@@ -443,7 +505,30 @@ export default function Home() {
         }
 
         if (!cancelled) {
-          setSessions(data.sessions ?? []);
+          const loadedSessions = data.sessions ?? [];
+
+          setSessions(loadedSessions);
+
+          // Restore the previously selected classroom.
+          const savedCode = localStorage.getItem("pulsecheck-selected-session");
+
+          const savedSession = loadedSessions.find(
+            (item) => item.code === savedCode,
+          );
+
+          if (savedSession) {
+            setSession(
+              (current) =>
+                current ?? {
+                  code: savedSession.code,
+                  topic: savedSession.topic,
+                  isActive: savedSession.isActive,
+                },
+            );
+          } else if (savedCode) {
+            // The saved classroom is no longer available in teacher history.
+            localStorage.removeItem("pulsecheck-selected-session");
+          }
         }
       } catch (err: unknown) {
         if (!cancelled) {
@@ -523,14 +608,17 @@ export default function Home() {
 
   // Find Pulses with responses and an average below 3/5.
   const attentionPulses = pulses.filter(
-    (pulse) => pulse.totalResponses > 0 && pulse.averageScore < 3,
+    (pulse) =>
+      pulse.mode === "rating" &&
+      pulse.totalResponses > 0 &&
+      pulse.averageScore < 3,
   );
 
   // Find concepts where student understanding is divided.
   const mixedUnderstandingPulses = pulses.filter((pulse) => {
+    if (pulse.mode !== "rating") return false;
     // Require a minimum number of responses.
-    if (pulse.totalResponses < 4) return false;
-
+    if (pulse.totalResponses < 5) return false;
     // The existing low-average alert handles these cases.
     if (pulse.averageScore < 3) return false;
 
@@ -543,6 +631,22 @@ export default function Home() {
 
     return lowPercentage >= 0.25 && highPercentage >= 0.25;
   });
+
+  // Always show active or paused Pulses before completed ones.
+  const sortedPulses = [...pulses].sort((a, b) => {
+    if (a.isActive !== b.isActive) {
+      return a.isActive ? -1 : 1;
+    }
+
+    return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+  });
+
+  const activePulseCount = pulses.filter((pulse) => pulse.isActive).length;
+
+  const completedPulseCount = pulses.length - activePulseCount;
+
+  // In ended classrooms, show completed Pulses by default.
+  const completedPulsesExpanded = showCompletedPulses ?? activePulseCount === 0;
 
   return (
     <main className="min-h-screen bg-[#f6f6fb] text-slate-900 antialiased">
@@ -689,13 +793,23 @@ export default function Home() {
                       <button
                         type="button"
                         aria-pressed={selected}
-                        onClick={() =>
+                        onClick={() => {
+                          localStorage.setItem(
+                            "pulsecheck-selected-session",
+                            item.code,
+                          );
+
                           setSession({
                             code: item.code,
                             topic: item.topic,
                             isActive: item.isActive,
-                          })
-                        }
+                          });
+
+                          setPulses([]);
+                          setPulsesLoading(true);
+                          setResults(null);
+                          setShowCompletedPulses(null);
+                        }}
                         className={`group w-full rounded-xl p-3.5 text-left transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-600 ${
                           selected
                             ? "bg-indigo-50 ring-2 ring-indigo-500"
@@ -806,6 +920,14 @@ export default function Home() {
             </section>
           ) : (
             <>
+              <button
+                type="button"
+                onClick={handleBackToOverview}
+                className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
+              >
+                <span aria-hidden="true">←</span>
+                All classrooms
+              </button>
               {/* Classroom overview with the join code */}
               <section className="overflow-hidden rounded-3xl bg-indigo-950 text-white shadow-xl shadow-indigo-950/10">
                 <div className="p-6 sm:p-8">
@@ -933,7 +1055,7 @@ export default function Home() {
                       How the class is doing
                     </h2>
                     <p className="mt-1 text-sm text-slate-500">
-                      Combined feedback from every Pulse in this classroom.
+                      Combined understanding feedback from Quick Rating Pulses.
                     </p>
                   </div>
                   <span className="inline-flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700">
@@ -965,7 +1087,7 @@ export default function Home() {
 
                       <div
                         className={`rounded-xl p-4 ${
-                          results.totalResponses === 0
+                          results.totalResponses < 5
                             ? "bg-slate-50"
                             : results.averageScore < 3
                               ? "bg-amber-50"
@@ -973,7 +1095,7 @@ export default function Home() {
                         }`}
                       >
                         <p className="text-sm font-medium text-slate-500">
-                          Average understanding
+                          Average reported understanding{" "}
                         </p>
                         <p className="mt-1 text-4xl font-extrabold tracking-tight">
                           {results.totalResponses > 0 ? (
@@ -991,17 +1113,21 @@ export default function Home() {
                         <p
                           className={`mt-1 text-xs font-semibold ${
                             results.totalResponses === 0
-                              ? "text-slate-500"
-                              : results.averageScore < 3
-                                ? "text-amber-800"
-                                : "text-emerald-800"
+                              ? "Waiting for the first response"
+                              : results.totalResponses < 5
+                                ? `Early signal — based on ${results.totalResponses} responses`
+                                : results.averageScore < 3
+                                  ? "Consider explaining again"
+                                  : "The class average is looking positive"
                           }`}
                         >
                           {results.totalResponses === 0
                             ? "Waiting for the first response"
-                            : results.averageScore < 3
-                              ? "Consider explaining again"
-                              : "The class is following well"}
+                            : results.totalResponses < 5
+                              ? `Early signal — based on ${results.totalResponses} Quick Rating responses`
+                              : results.averageScore < 3
+                                ? "Students are reporting difficulty. Consider revisiting the concepts."
+                                : "Students are reporting positive understanding. Verify with a Knowledge Check."}
                         </p>
                       </div>
                     </div>
@@ -1129,8 +1255,10 @@ export default function Home() {
                         </div>
 
                         <p className="mt-1 text-sm leading-6 text-amber-800">
-                          Students may need more explanation on these concepts.
-                          Consider revisiting them before moving forward.
+                          These Quick Rating results show low average
+                          understanding. Treat results with fewer than five
+                          responses as early signals and gather more feedback
+                          before deciding what to revisit.
                         </p>
 
                         <ul className="mt-4 space-y-2">
@@ -1506,189 +1634,656 @@ export default function Home() {
                       </p>
                     </div>
                   ) : (
-                    pulses.map((pulse) => (
-                      <article
-                        key={pulse.id}
-                        className={`rounded-2xl border-l-4 bg-white p-5 shadow-sm ring-1 ring-slate-200/70 sm:p-6 ${
-                          pulse.isActive
-                            ? pulse.isPaused
-                              ? "border-l-amber-400"
-                              : "border-l-emerald-500"
-                            : "border-l-slate-300"
-                        }`}
-                      >
-                        <div className="flex flex-wrap items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <h3 className="break-words text-lg font-bold text-slate-900">
-                              {pulse.concept}
-                            </h3>
-                            <p className="mt-1 text-sm leading-6 text-slate-500">
-                              {pulse.question}
-                            </p>
-                            {pulse.totalResponses > 0 &&
-                              pulse.averageScore < 3 && (
-                                <div className="mt-3 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5">
-                                  <span
-                                    className="text-amber-700"
-                                    aria-hidden="true"
-                                  >
-                                    ⚠
-                                  </span>
+                    sortedPulses.map((pulse, index) => (
+                      <Fragment key={pulse.id}>
+                        {/* Completed Pulse toggle, shown after active Pulses */}
+                        {index === activePulseCount &&
+                          completedPulseCount > 0 && (
+                            <button
+                              type="button"
+                              aria-expanded={completedPulsesExpanded}
+                              onClick={() =>
+                                setShowCompletedPulses(!completedPulsesExpanded)
+                              }
+                              className="flex w-full items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
+                            >
+                              <span>
+                                {completedPulsesExpanded ? "Hide" : "Show"}{" "}
+                                completed Pulses ({completedPulseCount})
+                              </span>
 
-                                  <div>
-                                    <p className="text-xs font-bold text-amber-900">
-                                      Needs attention
-                                    </p>
+                              <span aria-hidden="true">
+                                {completedPulsesExpanded ? "⌃" : "⌄"}
+                              </span>
+                            </button>
+                          )}
 
-                                    <p className="mt-0.5 text-xs leading-5 text-amber-800">
-                                      Average understanding is below 3/5.
-                                      Consider explaining this concept again.
+                        {(pulse.isActive || completedPulsesExpanded) && (
+                          <article
+                            className={`rounded-2xl border-l-4 bg-white p-5 shadow-sm ring-1 ring-slate-200/70 sm:p-6 ${
+                              pulse.isActive
+                                ? pulse.isPaused
+                                  ? "border-l-amber-400"
+                                  : "border-l-emerald-500"
+                                : "border-l-slate-300"
+                            }`}
+                          >
+                            <div className="flex flex-wrap items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <h3 className="break-words text-lg font-bold text-slate-900">
+                                  {pulse.concept}
+                                </h3>
+                                <p className="mt-1 text-sm leading-6 text-slate-500">
+                                  {pulse.question}
+                                </p>
+
+                                {/* Teacher-only question details and answer key */}
+                                {pulse.mode === "knowledge_check" && (
+                                  <details className="mt-4 overflow-hidden rounded-xl border border-indigo-100 bg-indigo-50/40">
+                                    <summary className="flex cursor-pointer list-none items-center justify-between gap-3 p-4 text-sm font-bold text-indigo-900 hover:bg-indigo-50">
+                                      <span>Question details & answer key</span>
+                                      <span aria-hidden="true">⌄</span>
+                                    </summary>
+
+                                    <div className="border-t border-indigo-100 p-4">
+                                      <h4 className="text-sm font-bold text-slate-800">
+                                        Answer options
+                                      </h4>
+
+                                      <div className="mt-3 space-y-2">
+                                        {(pulse.answerOptions ?? []).map(
+                                          (option, index) => {
+                                            const isCorrect =
+                                              option.id ===
+                                              pulse.correctOptionId;
+
+                                            return (
+                                              <div
+                                                key={option.id}
+                                                className={`flex items-center justify-between gap-3 rounded-xl border p-3 ${
+                                                  isCorrect
+                                                    ? "border-emerald-200 bg-emerald-50"
+                                                    : "border-slate-200 bg-white"
+                                                }`}
+                                              >
+                                                <div className="flex min-w-0 items-center gap-3">
+                                                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-xs font-bold text-slate-700">
+                                                    {String.fromCharCode(
+                                                      65 + index,
+                                                    )}
+                                                  </span>
+
+                                                  <span className="text-sm font-medium text-slate-800">
+                                                    {option.text}
+                                                  </span>
+                                                </div>
+
+                                                {isCorrect && (
+                                                  <span className="shrink-0 rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-bold text-emerald-800">
+                                                    Correct ✓
+                                                  </span>
+                                                )}
+                                              </div>
+                                            );
+                                          },
+                                        )}
+                                      </div>
+
+                                      <div className="mt-4 rounded-xl bg-white p-4 ring-1 ring-slate-200">
+                                        <h4 className="text-sm font-bold text-slate-800">
+                                          Explanation
+                                        </h4>
+
+                                        <p className="mt-2 text-sm leading-6 text-slate-600">
+                                          {pulse.explanation ||
+                                            "No explanation provided."}
+                                        </p>
+                                      </div>
+                                    </div>
+                                  </details>
+                                )}
+
+                                {pulse.totalResponses > 0 &&
+                                  pulse.averageScore < 3 && (
+                                    <div className="mt-3 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5">
+                                      <span
+                                        className="text-amber-700"
+                                        aria-hidden="true"
+                                      >
+                                        ⚠
+                                      </span>
+
+                                      <div>
+                                        <p className="text-xs font-bold text-amber-900">
+                                          Needs attention
+                                        </p>
+
+                                        <p className="mt-0.5 text-xs leading-5 text-amber-800">
+                                          Average understanding is below 3/5.
+                                          Consider explaining this concept
+                                          again.
+                                        </p>
+                                      </div>
+                                    </div>
+                                  )}
+                              </div>
+
+                              <span
+                                className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ${
+                                  pulse.isActive
+                                    ? pulse.isPaused
+                                      ? "bg-amber-50 text-amber-800"
+                                      : "bg-emerald-50 text-emerald-700"
+                                    : "bg-slate-100 text-slate-600"
+                                }`}
+                              >
+                                <span
+                                  className={`h-1.5 w-1.5 rounded-full ${
+                                    pulse.isActive
+                                      ? pulse.isPaused
+                                        ? "bg-amber-500"
+                                        : "animate-pulse bg-emerald-500"
+                                      : "bg-slate-400"
+                                  }`}
+                                />
+                                {pulse.isActive
+                                  ? pulse.isPaused
+                                    ? "Paused"
+                                    : "Collecting answers"
+                                  : "Completed"}
+                              </span>
+                            </div>
+
+                            <div className="mt-5 grid gap-6 md:grid-cols-[180px_minmax(0,1fr)]">
+                              <div className="flex gap-3 md:flex-col">
+                                <div className="flex-1 rounded-xl bg-slate-50 p-3.5">
+                                  <p className="text-xs font-medium text-slate-500">
+                                    Responses
+                                  </p>
+                                  <p className="mt-1 text-2xl font-extrabold">
+                                    {pulse.totalResponses}
+                                  </p>
+                                </div>
+                                <div
+                                  className={`flex-1 rounded-xl p-3.5 ${
+                                    pulse.totalResponses === 0
+                                      ? "bg-slate-50"
+                                      : pulse.averageScore < 3
+                                        ? "bg-amber-50"
+                                        : "bg-emerald-50"
+                                  }`}
+                                >
+                                  <p className="text-xs font-medium text-slate-500">
+                                    {pulse.mode === "knowledge_check"
+                                      ? "Avg confidence"
+                                      : "Average"}
+                                  </p>
+                                  <p className="mt-1 text-2xl font-extrabold">
+                                    {pulse.totalResponses > 0
+                                      ? pulse.mode === "knowledge_check"
+                                        ? `${pulse.knowledgeCheckStats?.averageConfidence ?? pulse.averageScore} / 5`
+                                        : `${pulse.averageScore} / 5`
+                                      : "—"}
+                                  </p>
+                                  {pulse.mode === "knowledge_check" &&
+                                    pulse.knowledgeCheckStats &&
+                                    pulse.knowledgeCheckStats.totalResponses >
+                                      0 && (
+                                      <p className="mt-2 border-t border-slate-200 pt-2 text-xs font-bold text-indigo-700">
+                                        {
+                                          pulse.knowledgeCheckStats
+                                            .accuracyPercentage
+                                        }
+                                        % correct
+                                        {" · "}
+                                        {
+                                          pulse.knowledgeCheckStats
+                                            .correctResponses
+                                        }
+                                        /
+                                        {
+                                          pulse.knowledgeCheckStats
+                                            .totalResponses
+                                        }{" "}
+                                        students
+                                      </p>
+                                    )}
+                                </div>
+                              </div>
+
+                              <div className="space-y-2.5">
+                                {([1, 2, 3, 4, 5] as const).map((score) => {
+                                  const count =
+                                    pulse.distribution[
+                                      String(score) as keyof PulseDistribution
+                                    ];
+
+                                  const percentage =
+                                    pulse.totalResponses > 0
+                                      ? (count / pulse.totalResponses) * 100
+                                      : 0;
+
+                                  return (
+                                    <div
+                                      key={score}
+                                      className="flex items-center gap-3"
+                                    >
+                                      <span className="w-4 text-sm font-bold text-slate-600">
+                                        {score}
+                                      </span>
+                                      <div className="h-2.5 flex-1 overflow-hidden rounded-full bg-slate-100">
+                                        <div
+                                          className={`h-full rounded-full transition-all duration-700 ${
+                                            [
+                                              "bg-rose-500",
+                                              "bg-orange-400",
+                                              "bg-amber-400",
+                                              "bg-lime-500",
+                                              "bg-emerald-500",
+                                            ][score - 1]
+                                          }`}
+                                          style={{ width: `${percentage}%` }}
+                                        />
+                                      </div>
+                                      <span className="w-20 text-right text-xs text-slate-500">
+                                        {count} ({Math.round(percentage)}%)
+                                      </span>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+
+                            {/* Knowledge Check confidence analytics */}
+
+                            {/* Knowledge Check confidence matrix */}
+                            {pulse.mode === "knowledge_check" &&
+                              pulse.knowledgeCheckStats && (
+                                <div className="mt-6 border-t border-slate-100 pt-5">
+                                  <div className="flex flex-wrap items-center justify-between gap-2">
+                                    <h4 className="font-bold text-slate-900">
+                                      Confidence vs. correctness
+                                    </h4>
+
+                                    <span className="rounded-full bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-700">
+                                      {pulse.knowledgeCheckStats
+                                        .totalResponses < 5
+                                        ? `Early signal · ${pulse.knowledgeCheckStats.totalResponses} responses`
+                                        : `${pulse.knowledgeCheckStats.totalResponses} responses analyzed`}
+                                    </span>
+                                  </div>
+
+                                  <details className="mt-3">
+                                    <summary className="w-fit cursor-pointer text-xs font-semibold text-indigo-600 hover:text-indigo-800">
+                                      How are these groups defined?
+                                    </summary>
+
+                                    <p className="mt-2 rounded-lg bg-slate-50 p-3 text-xs leading-5 text-slate-600">
+                                      Unsure means confidence scores 1–3.
+                                      Confident means scores 4–5. Correctness is
+                                      determined by comparing the student&apos;s
+                                      answer with the teacher&apos;s correct
+                                      answer.
                                     </p>
+                                  </details>
+
+                                  {pulse.knowledgeCheckStats.totalResponses <
+                                    5 && (
+                                    <p className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900">
+                                      Early signal: these patterns are based on
+                                      a small number of responses and may change
+                                      as more students participate.
+                                    </p>
+                                  )}
+
+                                  {pulse.knowledgeCheckStats.totalResponses ===
+                                  0 ? (
+                                    <p className="mt-4 rounded-xl bg-slate-50 p-4 text-sm text-slate-500">
+                                      Waiting for students to submit their
+                                      answers.
+                                    </p>
+                                  ) : (
+                                    <div className="mt-5">
+                                      {/* Fixed column headings */}
+                                      <div className="grid grid-cols-[76px_minmax(0,1fr)_minmax(0,1fr)] gap-2 sm:gap-3">
+                                        <div />
+
+                                        <div className="rounded-lg bg-slate-100 px-2 py-2 text-center text-xs font-bold text-slate-600">
+                                          Unsure
+                                          <span className="mt-1 block text-[10px] font-normal">
+                                            1–3
+                                          </span>
+                                        </div>
+
+                                        <div className="rounded-lg bg-slate-100 px-2 py-2 text-center text-xs font-bold text-slate-600">
+                                          Confident
+                                          <span className="mt-1 block text-[10px] font-normal">
+                                            4–5
+                                          </span>
+                                        </div>
+
+                                        {/* Correct row */}
+                                        <div className="flex items-center justify-center rounded-lg bg-emerald-50 px-1 py-2 text-center text-xs font-bold text-emerald-800">
+                                          Correct
+                                        </div>
+
+                                        <div className="min-w-0 rounded-xl border border-blue-200 bg-blue-50 p-3 sm:p-4">
+                                          <p className="text-xs font-bold leading-5 text-blue-800">
+                                            Underconfident
+                                          </p>
+
+                                          <p className="mt-3 text-3xl font-extrabold text-slate-900">
+                                            {
+                                              pulse.knowledgeCheckStats
+                                                .unsureCorrect
+                                            }
+                                          </p>
+
+                                          <p className="text-xs text-slate-500">
+                                            {Math.round(
+                                              (pulse.knowledgeCheckStats
+                                                .unsureCorrect /
+                                                pulse.knowledgeCheckStats
+                                                  .totalResponses) *
+                                                100,
+                                            )}
+                                            % of responses
+                                          </p>
+                                        </div>
+
+                                        <div className="min-w-0 rounded-xl border border-emerald-200 bg-emerald-50 p-3 sm:p-4">
+                                          <p className="text-xs font-bold leading-5 text-emerald-800">
+                                            Well-calibrated
+                                          </p>
+
+                                          <p className="mt-3 text-3xl font-extrabold text-slate-900">
+                                            {
+                                              pulse.knowledgeCheckStats
+                                                .confidentCorrect
+                                            }
+                                          </p>
+
+                                          <p className="text-xs text-slate-500">
+                                            {Math.round(
+                                              (pulse.knowledgeCheckStats
+                                                .confidentCorrect /
+                                                pulse.knowledgeCheckStats
+                                                  .totalResponses) *
+                                                100,
+                                            )}
+                                            % of responses
+                                          </p>
+                                        </div>
+
+                                        {/* Incorrect row */}
+                                        <div className="flex items-center justify-center rounded-lg bg-rose-50 px-1 py-2 text-center text-xs font-bold text-rose-800">
+                                          Incorrect
+                                        </div>
+
+                                        <div className="min-w-0 rounded-xl border border-amber-200 bg-amber-50 p-3 sm:p-4">
+                                          <p className="text-xs font-bold leading-5 text-amber-800">
+                                            Knowledge gap
+                                          </p>
+
+                                          <p className="mt-3 text-3xl font-extrabold text-slate-900">
+                                            {
+                                              pulse.knowledgeCheckStats
+                                                .unsureIncorrect
+                                            }
+                                          </p>
+
+                                          <p className="text-xs text-slate-500">
+                                            {Math.round(
+                                              (pulse.knowledgeCheckStats
+                                                .unsureIncorrect /
+                                                pulse.knowledgeCheckStats
+                                                  .totalResponses) *
+                                                100,
+                                            )}
+                                            % of responses
+                                          </p>
+                                        </div>
+
+                                        {/* Highlighted misconception cell */}
+                                        <div className="min-w-0 rounded-xl border-2 border-rose-300 bg-rose-50 p-3 shadow-sm sm:p-4">
+                                          <p className="text-xs font-extrabold leading-5 text-rose-800">
+                                            Possible misconception
+                                          </p>
+
+                                          <p className="mt-3 text-4xl font-extrabold text-rose-700">
+                                            {
+                                              pulse.knowledgeCheckStats
+                                                .confidentIncorrect
+                                            }
+                                          </p>
+
+                                          <p className="text-xs font-semibold text-rose-700">
+                                            {Math.round(
+                                              (pulse.knowledgeCheckStats
+                                                .confidentIncorrect /
+                                                pulse.knowledgeCheckStats
+                                                  .totalResponses) *
+                                                100,
+                                            )}
+                                            % of responses
+                                          </p>
+
+                                          <div className="mt-3 border-t border-rose-200 pt-3">
+                                            <p className="text-xs font-bold text-rose-800">
+                                              Confident incorrect choices:
+                                            </p>
+
+                                            {(pulse.answerDistribution ?? [])
+                                              .filter(
+                                                (option) =>
+                                                  !option.isCorrect &&
+                                                  option.confidentIncorrectCount >
+                                                    0,
+                                              )
+                                              .map((option) => (
+                                                <div
+                                                  key={option.id}
+                                                  className="mt-2 rounded-lg bg-white/80 p-3"
+                                                >
+                                                  <p className="text-sm font-bold text-slate-900">
+                                                    Option {option.id} —{" "}
+                                                    {option.text}
+                                                  </p>
+
+                                                  <p className="mt-1 text-xs font-semibold text-rose-700">
+                                                    {
+                                                      option.confidentIncorrectCount
+                                                    }{" "}
+                                                    {option.confidentIncorrectCount ===
+                                                    1
+                                                      ? "student was"
+                                                      : "students were"}{" "}
+                                                    confident and incorrect
+                                                  </p>
+                                                </div>
+                                              ))}
+
+                                            {(
+                                              pulse.answerDistribution ?? []
+                                            ).every(
+                                              (option) =>
+                                                option.isCorrect ||
+                                                option.confidentIncorrectCount ===
+                                                  0,
+                                            ) && (
+                                              <p className="mt-2 text-xs text-slate-500">
+                                                No specific wrong option has
+                                                attracted confident incorrect
+                                                answers.
+                                              </p>
+                                            )}
+                                          </div>
+
+                                          {pulse.knowledgeCheckStats
+                                            .confidentIncorrect > 0 ? (
+                                            <p className="mt-3 border-t border-rose-200 pt-3 text-xs font-semibold leading-5 text-rose-800">
+                                              {pulse.knowledgeCheckStats
+                                                .totalResponses < 5
+                                                ? "Early signal: gather more responses before treating this as a class-wide misconception."
+                                                : "Consider revisiting this concept before moving on."}
+                                            </p>
+                                          ) : (
+                                            <p className="mt-3 border-t border-rose-200 pt-3 text-xs text-rose-700">
+                                              No confident incorrect answers
+                                              detected.
+                                            </p>
+                                          )}
+                                        </div>
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+
+                            {/* Answer distribution per option */}
+                            {pulse.mode === "knowledge_check" &&
+                              pulse.answerDistribution && (
+                                <div className="mt-6 border-t border-slate-100 pt-5">
+                                  <h4 className="font-bold text-slate-900">
+                                    Answer distribution
+                                  </h4>
+
+                                  <p className="mt-1 text-sm text-slate-500">
+                                    See which answers students selected and how
+                                    confident they were.
+                                  </p>
+
+                                  <div className="mt-4 space-y-4">
+                                    {pulse.answerDistribution.map((option) => (
+                                      <div
+                                        key={option.id}
+                                        className="rounded-xl bg-slate-50 p-4"
+                                      >
+                                        <div className="flex flex-wrap items-start justify-between gap-3">
+                                          <div className="min-w-0 flex-1">
+                                            <div className="flex flex-wrap items-center gap-2">
+                                              <span className="rounded-lg bg-white px-2.5 py-1 text-xs font-bold text-slate-600 ring-1 ring-slate-200">
+                                                Option {option.id}
+                                              </span>
+
+                                              {option.isCorrect && (
+                                                <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-bold text-emerald-800">
+                                                  Correct answer ✓
+                                                </span>
+                                              )}
+
+                                              {!option.isCorrect &&
+                                                option.confidentIncorrectCount >
+                                                  0 && (
+                                                  <span className="rounded-full bg-rose-100 px-2.5 py-1 text-xs font-bold text-rose-800">
+                                                    {
+                                                      option.confidentIncorrectCount
+                                                    }{" "}
+                                                    confidently incorrect
+                                                  </span>
+                                                )}
+                                            </div>
+
+                                            <p className="mt-2 text-sm font-semibold leading-6 text-slate-800">
+                                              {option.text}
+                                            </p>
+                                          </div>
+
+                                          <div className="shrink-0 text-right">
+                                            <p className="text-2xl font-extrabold text-slate-900">
+                                              {option.count}
+                                            </p>
+
+                                            <p className="text-xs font-semibold text-slate-500">
+                                              {option.percentage}%
+                                            </p>
+                                          </div>
+                                        </div>
+
+                                        <div
+                                          className="mt-3 h-2.5 overflow-hidden rounded-full bg-slate-200"
+                                          role="progressbar"
+                                          aria-label={`Option ${option.id} selections`}
+                                          aria-valuenow={option.percentage}
+                                          aria-valuemin={0}
+                                          aria-valuemax={100}
+                                        >
+                                          <div
+                                            className={`h-full rounded-full transition-all duration-500 ${
+                                              option.isCorrect
+                                                ? "bg-emerald-500"
+                                                : "bg-indigo-500"
+                                            }`}
+                                            style={{
+                                              width: `${option.percentage}%`,
+                                            }}
+                                          />
+                                        </div>
+
+                                        <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+                                          <span className="text-xs text-slate-500">
+                                            {option.count}{" "}
+                                            {option.count === 1
+                                              ? "student"
+                                              : "students"}{" "}
+                                            selected
+                                          </span>
+
+                                          <span className="text-xs font-semibold text-slate-600">
+                                            {option.averageConfidence !== null
+                                              ? `Avg confidence: ${option.averageConfidence}/5`
+                                              : "No responses yet"}
+                                          </span>
+                                        </div>
+                                      </div>
+                                    ))}
                                   </div>
                                 </div>
                               )}
-                          </div>
 
-                          <span
-                            className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ${
-                              pulse.isActive
-                                ? pulse.isPaused
-                                  ? "bg-amber-50 text-amber-800"
-                                  : "bg-emerald-50 text-emerald-700"
-                                : "bg-slate-100 text-slate-600"
-                            }`}
-                          >
-                            <span
-                              className={`h-1.5 w-1.5 rounded-full ${
-                                pulse.isActive
-                                  ? pulse.isPaused
-                                    ? "bg-amber-500"
-                                    : "animate-pulse bg-emerald-500"
-                                  : "bg-slate-400"
-                              }`}
-                            />
-                            {pulse.isActive
-                              ? pulse.isPaused
-                                ? "Paused"
-                                : "Collecting answers"
-                              : "Completed"}
-                          </span>
-                        </div>
-
-                        <div className="mt-5 grid gap-6 md:grid-cols-[180px_minmax(0,1fr)]">
-                          <div className="flex gap-3 md:flex-col">
-                            <div className="flex-1 rounded-xl bg-slate-50 p-3.5">
-                              <p className="text-xs font-medium text-slate-500">
-                                Responses
-                              </p>
-                              <p className="mt-1 text-2xl font-extrabold">
-                                {pulse.totalResponses}
-                              </p>
-                            </div>
-                            <div
-                              className={`flex-1 rounded-xl p-3.5 ${
-                                pulse.totalResponses === 0
-                                  ? "bg-slate-50"
-                                  : pulse.averageScore < 3
-                                    ? "bg-amber-50"
-                                    : "bg-emerald-50"
-                              }`}
-                            >
-                              <p className="text-xs font-medium text-slate-500">
-                                Average
-                              </p>
-                              <p className="mt-1 text-2xl font-extrabold">
-                                {pulse.totalResponses > 0
-                                  ? `${pulse.averageScore} / 5`
-                                  : "—"}
-                              </p>
-                            </div>
-                          </div>
-
-                          <div className="space-y-2.5">
-                            {([1, 2, 3, 4, 5] as const).map((score) => {
-                              const count =
-                                pulse.distribution[
-                                  String(score) as keyof PulseDistribution
-                                ];
-
-                              const percentage =
-                                pulse.totalResponses > 0
-                                  ? (count / pulse.totalResponses) * 100
-                                  : 0;
-
-                              return (
-                                <div
-                                  key={score}
-                                  className="flex items-center gap-3"
+                            {pulse.isActive && (
+                              <div className="mt-5 flex flex-wrap gap-3 border-t border-slate-100 pt-4">
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    handlePauseResumePulse(
+                                      pulse.id,
+                                      pulse.isPaused ? "resume" : "pause",
+                                    )
+                                  }
+                                  disabled={
+                                    updatingPulseId === pulse.id ||
+                                    endingPulseId === pulse.id
+                                  }
+                                  className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-amber-300 hover:bg-amber-50 hover:text-amber-800 disabled:cursor-not-allowed disabled:opacity-50"
                                 >
-                                  <span className="w-4 text-sm font-bold text-slate-600">
-                                    {score}
-                                  </span>
-                                  <div className="h-2.5 flex-1 overflow-hidden rounded-full bg-slate-100">
-                                    <div
-                                      className={`h-full rounded-full transition-all duration-700 ${
-                                        [
-                                          "bg-rose-500",
-                                          "bg-orange-400",
-                                          "bg-amber-400",
-                                          "bg-lime-500",
-                                          "bg-emerald-500",
-                                        ][score - 1]
-                                      }`}
-                                      style={{ width: `${percentage}%` }}
-                                    />
-                                  </div>
-                                  <span className="w-20 text-right text-xs text-slate-500">
-                                    {count} ({Math.round(percentage)}%)
-                                  </span>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </div>
+                                  {updatingPulseId === pulse.id
+                                    ? pulse.isPaused
+                                      ? "Resuming..."
+                                      : "Pausing..."
+                                    : pulse.isPaused
+                                      ? "Resume"
+                                      : "Pause"}
+                                </button>
 
-                        {pulse.isActive && (
-                          <div className="mt-5 flex flex-wrap gap-3 border-t border-slate-100 pt-4">
-                            <button
-                              type="button"
-                              onClick={() =>
-                                handlePauseResumePulse(
-                                  pulse.id,
-                                  pulse.isPaused ? "resume" : "pause",
-                                )
-                              }
-                              disabled={
-                                updatingPulseId === pulse.id ||
-                                endingPulseId === pulse.id
-                              }
-                              className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-amber-300 hover:bg-amber-50 hover:text-amber-800 disabled:cursor-not-allowed disabled:opacity-50"
-                            >
-                              {updatingPulseId === pulse.id
-                                ? pulse.isPaused
-                                  ? "Resuming..."
-                                  : "Pausing..."
-                                : pulse.isPaused
-                                  ? "Resume"
-                                  : "Pause"}
-                            </button>
-
-                            <button
-                              type="button"
-                              onClick={() => handleEndPulse(pulse.id)}
-                              disabled={
-                                endingPulseId === pulse.id ||
-                                updatingPulseId === pulse.id
-                              }
-                              className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-rose-600 transition hover:border-rose-300 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
-                            >
-                              {endingPulseId === pulse.id
-                                ? "Ending..."
-                                : "End Pulse"}
-                            </button>
-                          </div>
+                                <button
+                                  type="button"
+                                  onClick={() => handleEndPulse(pulse.id)}
+                                  disabled={
+                                    endingPulseId === pulse.id ||
+                                    updatingPulseId === pulse.id
+                                  }
+                                  className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-rose-600 transition hover:border-rose-300 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                >
+                                  {endingPulseId === pulse.id
+                                    ? "Ending..."
+                                    : "End Pulse"}
+                                </button>
+                              </div>
+                            )}
+                          </article>
                         )}
-                      </article>
+                      </Fragment>
                     ))
                   )}
                 </div>

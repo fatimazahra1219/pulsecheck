@@ -1,4 +1,3 @@
-
 import { NextResponse } from "next/server";
 import { connectDB } from "@/lib/mongodb";
 import Session from "@/lib/models/Session";
@@ -18,6 +17,7 @@ type StudentResponseRecord = {
 };
 
 type PulseResultRecord = {
+  mode?: "rating" | "knowledge_check";
   responses?: StudentResponseRecord[];
 };
 
@@ -70,11 +70,7 @@ export async function GET(request: Request, { params }: RouteContext) {
 
     // Add a valid student answer to the overall statistics.
     function addResponse(score: number) {
-      if (
-        Number.isInteger(score) &&
-        score >= 1 &&
-        score <= 5
-      ) {
+      if (Number.isInteger(score) && score >= 1 && score <= 5) {
         distribution[score as ScoreKey]++;
         totalScore += score;
         totalResponses++;
@@ -89,21 +85,25 @@ export async function GET(request: Request, { params }: RouteContext) {
       addResponse(response.score);
     }
 
-    // Include responses from every Pulse.
-    const pulseRecords =
-      session.pulses as unknown as PulseResultRecord[];
+  // Include responses from Quick Rating Pulses only.
+// Knowledge Check scores represent confidence, not understanding.
+const pulseRecords =
+  session.pulses as unknown as PulseResultRecord[];
 
-    for (const pulse of pulseRecords ?? []) {
-      for (const response of pulse.responses ?? []) {
-        addResponse(response.score);
-      }
-    }
+for (const pulse of pulseRecords ?? []) {
+  // Older Pulses without a mode are treated as rating Pulses.
+  const mode = pulse.mode ?? "rating";
+
+  if (mode !== "rating") continue;
+
+  for (const response of pulse.responses ?? []) {
+    addResponse(response.score);
+  }
+}
 
     // Calculate the overall average.
     const averageScore =
-      totalResponses > 0
-        ? Number((totalScore / totalResponses).toFixed(2))
-        : 0;
+      totalResponses > 0 ? Number((totalScore / totalResponses).toFixed(2)) : 0;
 
     return NextResponse.json({
       session: {
