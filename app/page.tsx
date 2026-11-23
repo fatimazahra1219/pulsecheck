@@ -1,6 +1,9 @@
 "use client";
 import { Fragment, useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
+import { languageOptions, type Language } from "@/lib/i18n/translations";
+import { useLanguage } from "@/lib/i18n/useLanguage";
+import { buildInterventionSuggestions } from "@/lib/interventions/templates";
 
 type Session = {
   code: string;
@@ -32,29 +35,65 @@ type KnowledgeCheckStats = {
   confidentIncorrect: number;
 };
 
+type RecoveryStats = {
+  originalPulseId: string;
+  originalConcept: string;
+  originalCohortSize: number;
+  followUpCompleted: number;
+  recovered: number;
+  stillIncorrect: number;
+  notRechecked: number;
+  recoveryPercentage: number | null;
+};
+
 type AnswerDistribution = {
   id: string;
   text: string;
+  misconception?: string;
   isCorrect: boolean;
   count: number;
   percentage: number;
   averageConfidence: number | null;
   confidentIncorrectCount: number;
 };
+
+type ActivityResponse = {
+  answer: string;
+  submittedAt: string | null;
+};
+
+type Intervention = {
+  id: string;
+  title: string;
+  instructions: string;
+  teacherMaterial?: string;
+  isActive: boolean;
+  activityResponses: ActivityResponse[];
+};
 type Pulse = {
   id: string;
   concept: string;
   question: string;
   mode?: "rating" | "knowledge_check";
+  recheckOfPulseId?: string | null;
   answerOptions?: Array<{
     id: string;
     text: string;
+    misconception?: string;
   }>;
 
   correctOptionId?: string;
   explanation?: string;
   knowledgeCheckStats?: KnowledgeCheckStats | null;
+  recoveryStats?: RecoveryStats | null;
   answerDistribution?: AnswerDistribution[] | null;
+  activeIntervention?: {
+    id: string;
+    title: string;
+    instructions: string;
+    teacherMaterial?: string;
+  } | null;
+  interventions?: Intervention[];
   isActive: boolean;
   isPaused: boolean;
   totalResponses: number;
@@ -62,6 +101,18 @@ type Pulse = {
   distribution: PulseDistribution;
   createdAt: string;
 };
+
+type InterventionDraft = {
+  pulseId: string;
+  answerOptionId: string;
+  title: string;
+  instructions: string;
+  teacherMaterial: string;
+  requiresTeacherInput: boolean;
+  teacherInputLabel?: string;
+  teacherInputPlaceholder?: string;
+};
+
 type Distribution = {
   "1": number;
   "2": number;
@@ -89,6 +140,7 @@ type ResultsResponse = {
 
 export default function Home() {
   const [topic, setTopic] = useState("");
+  const { language, setLanguage, t, dir } = useLanguage("teacher");
   const [session, setSession] = useState<Session | null>(null);
   const [sessions, setSessions] = useState<SessionHistoryItem[]>([]);
   const [historyLoading, setHistoryLoading] = useState(true);
@@ -115,11 +167,13 @@ export default function Home() {
     "rating",
   );
 
+  const [recheckOfPulseId, setRecheckOfPulseId] = useState("");
+
   const [answerOptions, setAnswerOptions] = useState([
-    { id: "A", text: "" },
-    { id: "B", text: "" },
-    { id: "C", text: "" },
-    { id: "D", text: "" },
+    { id: "A", text: "", misconception: "" },
+    { id: "B", text: "", misconception: "" },
+    { id: "C", text: "", misconception: "" },
+    { id: "D", text: "", misconception: "" },
   ]);
 
   const [correctOptionId, setCorrectOptionId] = useState("A");
@@ -143,6 +197,20 @@ export default function Home() {
   const [endingPulseId, setEndingPulseId] = useState<string | null>(null);
   const [updatingPulseId, setUpdatingPulseId] = useState<string | null>(null);
   const [pulseActionError, setPulseActionError] = useState("");
+
+  // Intervention editor and launch state
+  const [interventionDraft, setInterventionDraft] =
+    useState<InterventionDraft | null>(null);
+
+  const [launchingIntervention, setLaunchingIntervention] = useState(false);
+
+  const [endingInterventionId, setEndingInterventionId] = useState<
+    string | null
+  >(null);
+
+  const [interventionError, setInterventionError] = useState("");
+
+  const [interventionMessage, setInterventionMessage] = useState("");
 
   // Create a classroom session.
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -247,10 +315,10 @@ export default function Home() {
     setQuestion("");
     setPulseMode("rating");
     setAnswerOptions([
-      { id: "A", text: "" },
-      { id: "B", text: "" },
-      { id: "C", text: "" },
-      { id: "D", text: "" },
+      { id: "A", text: "", misconception: "" },
+      { id: "B", text: "", misconception: "" },
+      { id: "C", text: "", misconception: "" },
+      { id: "D", text: "", misconception: "" },
     ]);
     setCorrectOptionId("A");
     setExplanation("");
@@ -271,6 +339,9 @@ export default function Home() {
       .map((option) => ({
         id: option.id,
         text: option.text.trim(),
+        ...(option.id !== correctOptionId && option.misconception.trim()
+          ? { misconception: option.misconception.trim() }
+          : {}),
       }));
 
     // Validate the knowledge-check configuration.
@@ -311,6 +382,7 @@ export default function Home() {
             concept: concept.trim(),
             question: question.trim(),
             mode: pulseMode,
+            ...(recheckOfPulseId ? { recheckOfPulseId } : {}),
             ...(pulseMode === "knowledge_check"
               ? {
                   answerOptions: preparedAnswerOptions,
@@ -335,12 +407,13 @@ export default function Home() {
       setConcept("");
       setQuestion("");
       setPulseMode("rating");
+      setRecheckOfPulseId("");
       setExplanation("");
       setAnswerOptions([
-        { id: "A", text: "" },
-        { id: "B", text: "" },
-        { id: "C", text: "" },
-        { id: "D", text: "" },
+        { id: "A", text: "", misconception: "" },
+        { id: "B", text: "", misconception: "" },
+        { id: "C", text: "", misconception: "" },
+        { id: "D", text: "", misconception: "" },
       ]);
       setCorrectOptionId("A");
 
@@ -437,6 +510,114 @@ export default function Home() {
       setUpdatingPulseId(null);
     }
   }
+
+  // Launch the teacher's selected intervention.
+  async function handleLaunchIntervention() {
+    if (!session || !interventionDraft) return;
+
+    const draft = interventionDraft;
+
+    if (!draft.title.trim() || !draft.instructions.trim()) {
+      setInterventionError("Title and instructions are required.");
+      return;
+    }
+
+    if (draft.requiresTeacherInput && !draft.teacherMaterial.trim()) {
+      setInterventionError(
+        "Please add the required code or example before launching.",
+      );
+      return;
+    }
+
+    setLaunchingIntervention(true);
+    setInterventionError("");
+    setInterventionMessage("");
+
+    try {
+      const response = await fetch(
+        `/api/sessions/${encodeURIComponent(session.code)}/pulses/${encodeURIComponent(draft.pulseId)}`,
+        {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            action: "launch_intervention",
+            intervention: {
+              title: draft.title.trim(),
+              instructions: draft.instructions.trim(),
+              teacherMaterial: draft.teacherMaterial.trim(),
+            },
+          }),
+        },
+      );
+
+      const data: {
+        message?: string;
+        error?: string;
+      } = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Unable to launch activity.");
+      }
+
+      setInterventionDraft(null);
+      setInterventionMessage(
+        "Activity launched successfully! Students can now see it.",
+      );
+
+      setPulseRefresh((current) => current + 1);
+    } catch (err: unknown) {
+      setInterventionError(
+        err instanceof Error ? err.message : "Something went wrong.",
+      );
+    } finally {
+      setLaunchingIntervention(false);
+    }
+  }
+
+  async function handleEndIntervention(pulseId: string) {
+    if (!session) return;
+
+    setEndingInterventionId(pulseId);
+    setInterventionError("");
+    setInterventionMessage("");
+
+    try {
+      const response = await fetch(
+        `/api/sessions/${session.code}/pulses/${pulseId}`,
+        {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            action: "end_intervention",
+          }),
+        },
+      );
+
+      const data: { message?: string; error?: string } = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to end the activity.");
+      }
+
+      setInterventionMessage(
+        "Activity ended. Students can continue with the lesson.",
+      );
+      setPulseRefresh((current) => current + 1);
+    } catch (error) {
+      setInterventionError(
+        error instanceof Error
+          ? error.message
+          : "Something went wrong while ending the activity.",
+      );
+    } finally {
+      setEndingInterventionId(null);
+    }
+  }
+
   // Automatically retrieve results every 3 seconds.
   useEffect(() => {
     if (!sessionCode) return;
@@ -649,7 +830,11 @@ export default function Home() {
   const completedPulsesExpanded = showCompletedPulses ?? activePulseCount === 0;
 
   return (
-    <main className="min-h-screen bg-[#f6f6fb] text-slate-900 antialiased">
+    <main
+      dir={dir}
+      className="min-h-screen bg-[#f6f6fb] text-slate-900 antialiased"
+    >
+      {" "}
       {/* Header */}
       <header className="sticky top-0 z-30 border-b border-slate-200/70 bg-white/80 backdrop-blur-xl">
         <div className="mx-auto flex max-w-[1400px] items-center justify-between px-4 py-3 sm:px-8">
@@ -669,7 +854,7 @@ export default function Home() {
               </svg>
             </span>
             <span className="text-lg font-extrabold tracking-tight">
-              PulseCheck
+              {t.appName}
             </span>
           </Link>
 
@@ -679,20 +864,29 @@ export default function Home() {
             rel="noopener noreferrer"
             className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-indigo-300 hover:text-indigo-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
           >
-            Preview student view ↗
+            {t.previewStudentView} ↗
           </Link>
+          <select
+            aria-label={t.language}
+            value={language}
+            onChange={(event) => setLanguage(event.target.value as Language)}
+            className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            {languageOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.nativeLabel}
+              </option>
+            ))}
+          </select>
         </div>
       </header>
-
       <div className="mx-auto grid max-w-[1400px] gap-6 px-4 py-6 sm:px-8 sm:py-8 lg:grid-cols-[340px_minmax(0,1fr)]">
         {/* ---------- Sidebar ---------- */}
         <aside className="space-y-5 lg:sticky lg:top-24 lg:self-start">
           {/* Create classroom */}
           <section className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200/70">
-            <h2 className="text-base font-bold">New classroom</h2>
-            <p className="mt-1 text-sm text-slate-500">
-              Name your lesson and get a code for your students.
-            </p>
+            <h2 className="text-base font-bold">{t.newClassroom}</h2>
+            <p className="mt-1 text-sm text-slate-500">{t.nameLesson}</p>
 
             <form onSubmit={handleSubmit} className="mt-4 space-y-3">
               <label htmlFor="topic" className="sr-only">
@@ -703,7 +897,7 @@ export default function Home() {
                 type="text"
                 value={topic}
                 onChange={(event) => setTopic(event.target.value)}
-                placeholder="e.g. JavaScript array methods"
+                placeholder={t.topicPlaceholder}
                 maxLength={100}
                 required
                 className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition placeholder:text-slate-400 focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-100"
@@ -723,7 +917,7 @@ export default function Home() {
                 disabled={loading || !topic.trim()}
                 className="w-full rounded-xl bg-indigo-600 px-5 py-3 text-sm font-bold text-white shadow-sm shadow-indigo-600/30 transition hover:bg-indigo-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {loading ? "Creating..." : "Create classroom"}
+                {loading ? t.creating : t.createClassroom}
               </button>
             </form>
           </section>
@@ -732,7 +926,7 @@ export default function Home() {
           <section className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200/70">
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-2">
-                <h2 className="text-base font-bold">My classrooms</h2>
+                <h2 className="text-base font-bold">{t.myClassrooms}</h2>
                 <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-600">
                   {sessions.length}
                 </span>
@@ -777,10 +971,10 @@ export default function Home() {
                   🎒
                 </p>
                 <p className="mt-2 text-sm font-semibold text-slate-700">
-                  No classrooms yet
+                  {t.noClassrooms}
                 </p>
                 <p className="mt-1 text-sm text-slate-500">
-                  Create your first one above to get started.
+                  {t.firstClassroom}
                 </p>
               </div>
             ) : (
@@ -863,33 +1057,27 @@ export default function Home() {
             /* Welcome state */
             <section className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-slate-200/70 sm:p-10">
               <h1 className="max-w-2xl text-3xl font-extrabold leading-tight tracking-tight text-slate-950 sm:text-5xl">
-                Know what your students understand, while you are still
-                teaching.
+                {t.welcomeHeadline}
               </h1>
               <p className="mt-4 max-w-xl text-base leading-7 text-slate-500">
-                Students can share their understanding without entering their
-                names, making it easier to express when they need help. Pick a
-                classroom on the left or create a new one to begin.
+                {t.welcomeDescription}
               </p>
 
               <ol className="mt-10 grid gap-4 sm:grid-cols-3">
                 {[
                   {
-                    title: "Create a classroom",
-                    description:
-                      "Enter your lesson topic and get a short join code.",
+                    title: t.createClassroomStep,
+                    description: t.createClassroomStepDescription,
                     icon: "🏫",
                   },
                   {
-                    title: "Ask a Pulse",
-                    description:
-                      "Pick a concept and ask students to rate it from 1 to 5.",
+                    title: t.askPulseStep,
+                    description: t.askPulseStepDescription,
                     icon: "💬",
                   },
                   {
-                    title: "Adapt on the spot",
-                    description:
-                      "Watch the results update live and slow down where needed.",
+                    title: t.adaptStep,
+                    description: t.adaptStepDescription,
                     icon: "📈",
                   },
                 ].map((item, index) => (
@@ -905,7 +1093,7 @@ export default function Home() {
                         {item.icon}
                       </span>
                       <span className="text-sm font-semibold text-indigo-600">
-                        Step {index + 1}
+                        {t.stepLabel} {index + 1}
                       </span>
                     </div>
                     <h3 className="mt-4 font-bold text-slate-900">
@@ -1395,11 +1583,17 @@ export default function Home() {
                       <select
                         id="pulseMode"
                         value={pulseMode}
-                        onChange={(event) =>
-                          setPulseMode(
-                            event.target.value as "rating" | "knowledge_check",
-                          )
-                        }
+                        onChange={(event) => {
+                          const nextMode = event.target.value as
+                            | "rating"
+                            | "knowledge_check";
+
+                          setPulseMode(nextMode);
+
+                          if (nextMode === "rating") {
+                            setRecheckOfPulseId("");
+                          }
+                        }}
                         className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium outline-none transition focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100"
                       >
                         <option value="rating">
@@ -1416,7 +1610,47 @@ export default function Home() {
                           : "Students rate their confidence and answer a multiple-choice question."}
                       </p>
                     </div>
+                    {pulseMode === "knowledge_check" && (
+                      <div className="mt-4">
+                        <label
+                          htmlFor="recheckOfPulseId"
+                          className="mb-2 block text-sm font-semibold text-slate-700"
+                        >
+                          Is this a follow-up Knowledge Check?
+                        </label>
 
+                        <select
+                          id="recheckOfPulseId"
+                          value={recheckOfPulseId}
+                          onChange={(event) =>
+                            setRecheckOfPulseId(event.target.value)
+                          }
+                          className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100"
+                        >
+                          <option value="">
+                            No — this is a new Knowledge Check
+                          </option>
+
+                          {pulses
+                            .filter(
+                              (pulse) =>
+                                pulse.mode === "knowledge_check" &&
+                                !pulse.recheckOfPulseId,
+                            )
+                            .map((pulse) => (
+                              <option key={pulse.id} value={pulse.id}>
+                                {pulse.concept} — {pulse.question}
+                              </option>
+                            ))}
+                        </select>
+
+                        <p className="mt-2 text-xs leading-5 text-slate-500">
+                          Select an earlier Knowledge Check to compare
+                          students&apos; new answers with their original
+                          answers.
+                        </p>
+                      </div>
+                    )}
                     <div className="mt-4 grid gap-4 md:grid-cols-[1fr_1.6fr]">
                       <div>
                         <label
@@ -1522,6 +1756,43 @@ export default function Home() {
                                 />
                                 This is the correct answer
                               </label>
+                              {option.id !== correctOptionId &&
+                                option.text.trim() && (
+                                  <div className="mt-3">
+                                    <label
+                                      htmlFor={`misconception-${option.id}`}
+                                      className="mb-1.5 block text-sm font-semibold text-slate-700"
+                                    >
+                                      What misconception does this wrong answer
+                                      represent?
+                                      <span className="ml-1 text-xs font-normal text-slate-400">
+                                        (Optional)
+                                      </span>
+                                    </label>
+
+                                    <textarea
+                                      id={`misconception-${option.id}`}
+                                      value={option.misconception}
+                                      onChange={(event) =>
+                                        setAnswerOptions((current) =>
+                                          current.map((item) =>
+                                            item.id === option.id
+                                              ? {
+                                                  ...item,
+                                                  misconception:
+                                                    event.target.value,
+                                                }
+                                              : item,
+                                          ),
+                                        )
+                                      }
+                                      placeholder="e.g. The student believes map() modifies the original array."
+                                      maxLength={300}
+                                      rows={2}
+                                      className="w-full resize-y rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm outline-none transition focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-100"
+                                    />
+                                  </div>
+                                )}
                             </div>
                           ))}
                         </div>
@@ -1612,6 +1883,24 @@ export default function Home() {
                   </p>
                 )}
 
+                {interventionMessage && (
+                  <p
+                    role="status"
+                    className="mt-4 rounded-xl bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800"
+                  >
+                    {interventionMessage}
+                  </p>
+                )}
+
+                {interventionError && (
+                  <p
+                    role="alert"
+                    className="mt-4 rounded-xl bg-rose-50 px-4 py-3 text-sm text-rose-700"
+                  >
+                    {interventionError}
+                  </p>
+                )}
+
                 {/* Pulse list */}
                 <div className="mt-6 space-y-4">
                   {pulsesLoading ? (
@@ -1676,6 +1965,137 @@ export default function Home() {
                                 <p className="mt-1 text-sm leading-6 text-slate-500">
                                   {pulse.question}
                                 </p>
+
+                                {pulse.activeIntervention && (
+                                  <div className="mt-4 rounded-2xl border border-indigo-200 bg-indigo-50 p-4">
+                                    <div className="mb-3">
+                                      <p className="text-xs font-bold uppercase tracking-wide text-indigo-700">
+                                        Activity currently shown to students
+                                      </p>
+
+                                      <h4 className="mt-2 font-bold text-indigo-950">
+                                        {pulse.activeIntervention.title}
+                                      </h4>
+
+                                      <p className="mt-2 whitespace-pre-wrap text-sm text-indigo-900">
+                                        {pulse.activeIntervention.instructions}
+                                      </p>
+
+                                      {pulse.activeIntervention.teacherMaterial?.trim() && (
+                                        <div className="mt-3 rounded-xl bg-white p-3">
+                                          <p className="mb-1 text-xs font-bold text-slate-500">
+                                            Example / teacher material
+                                          </p>
+                                          <pre className="whitespace-pre-wrap break-words text-sm text-slate-800">
+                                            {
+                                              pulse.activeIntervention
+                                                .teacherMaterial
+                                            }
+                                          </pre>
+                                        </div>
+                                      )}
+                                    </div>
+
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        handleEndIntervention(pulse.id)
+                                      }
+                                      disabled={
+                                        endingInterventionId === pulse.id
+                                      }
+                                      className="rounded-xl bg-rose-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-50"
+                                    >
+                                      {endingInterventionId === pulse.id
+                                        ? "Ending activity..."
+                                        : "End activity"}
+                                    </button>
+                                  </div>
+                                )}
+
+                                {/* Submitted activity answers */}
+                                {(pulse.interventions ?? []).length > 0 && (
+                                  <div className="mt-6 border-t border-slate-100 pt-5">
+                                    <h4 className="font-bold text-slate-900">
+                                      Activity responses
+                                    </h4>
+
+                                    <p className="mt-1 text-sm text-slate-500">
+                                      Read students&apos; answers to the
+                                      activities you launched. Responses are
+                                      displayed without student names.
+                                    </p>
+
+                                    <div className="mt-4 space-y-3">
+                                      {pulse.interventions!.map(
+                                        (intervention) => (
+                                          <details
+                                            key={intervention.id}
+                                            className="overflow-hidden rounded-xl border border-indigo-100 bg-indigo-50/40"
+                                          >
+                                            <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-3 p-4 text-sm font-bold text-indigo-900 hover:bg-indigo-50">
+                                              <span>{intervention.title}</span>
+
+                                              <span className="text-xs font-semibold text-indigo-600">
+                                                {
+                                                  intervention.activityResponses
+                                                    .length
+                                                }{" "}
+                                                {intervention.activityResponses
+                                                  .length === 1
+                                                  ? "answer"
+                                                  : "answers"}
+                                                {" · "}
+                                                {intervention.isActive
+                                                  ? "Active"
+                                                  : "Ended"}
+                                              </span>
+                                            </summary>
+
+                                            <div className="border-t border-indigo-100 p-4">
+                                              <p className="whitespace-pre-wrap text-sm leading-6 text-slate-700">
+                                                {intervention.instructions}
+                                              </p>
+
+                                              {intervention.activityResponses
+                                                .length === 0 ? (
+                                                <p className="mt-4 rounded-lg bg-white p-3 text-sm text-slate-500">
+                                                  No students have submitted an
+                                                  answer to this activity yet.
+                                                </p>
+                                              ) : (
+                                                <div className="mt-4 space-y-3">
+                                                  {intervention.activityResponses.map(
+                                                    (response, index) => (
+                                                      <div
+                                                        key={`${intervention.id}-response-${index}`}
+                                                        className="rounded-xl border border-slate-200 bg-white p-4"
+                                                      >
+                                                        <p className="text-xs font-bold text-indigo-600">
+                                                          Response {index + 1}
+                                                        </p>
+
+                                                        <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-6 text-slate-800">
+                                                          {response.answer}
+                                                        </p>
+
+                                                        <p className="mt-3 text-xs text-slate-400">
+                                                          {response.submittedAt
+                                                            ? `Submitted ${new Date(response.submittedAt).toLocaleString()}`
+                                                            : "Submission time unavailable"}
+                                                        </p>
+                                                      </div>
+                                                    ),
+                                                  )}
+                                                </div>
+                                              )}
+                                            </div>
+                                          </details>
+                                        ),
+                                      )}
+                                    </div>
+                                  </div>
+                                )}
 
                                 {/* Teacher-only question details and answer key */}
                                 {pulse.mode === "knowledge_check" && (
@@ -2139,7 +2559,119 @@ export default function Home() {
                                   )}
                                 </div>
                               )}
+                            {/* Learning recovery report */}
+                            {pulse.recoveryStats && (
+                              <section className="mt-6 rounded-2xl border border-emerald-200 bg-emerald-50/50 p-5">
+                                <div className="flex flex-wrap items-start justify-between gap-3">
+                                  <div>
+                                    <h4 className="font-bold text-slate-900">
+                                      Learning recovery
+                                    </h4>
 
+                                    <p className="mt-1 text-sm leading-6 text-slate-600">
+                                      Follow-up results for students who were
+                                      confidently incorrect on `&quot;
+                                      {pulse.recoveryStats.originalConcept}
+                                      `&quot;.
+                                    </p>
+                                  </div>
+
+                                  <span className="rounded-full bg-emerald-100 px-3 py-1.5 text-sm font-bold text-emerald-800">
+                                    {pulse.recoveryStats.recoveryPercentage !==
+                                    null
+                                      ? `${pulse.recoveryStats.recoveryPercentage}% recovered`
+                                      : "Awaiting responses"}
+                                  </span>
+                                </div>
+
+                                {pulse.recoveryStats.originalCohortSize ===
+                                0 ? (
+                                  <p className="mt-4 rounded-xl bg-white p-4 text-sm text-slate-600">
+                                    No students were confidently incorrect on
+                                    the original Knowledge Check. There is no
+                                    recovery cohort to measure.
+                                  </p>
+                                ) : (
+                                  <>
+                                    <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+                                      <div className="rounded-xl bg-white p-3">
+                                        <p className="text-xs font-medium text-slate-500">
+                                          Original cohort
+                                        </p>
+                                        <p className="mt-1 text-2xl font-extrabold text-slate-900">
+                                          {
+                                            pulse.recoveryStats
+                                              .originalCohortSize
+                                          }
+                                        </p>
+                                      </div>
+
+                                      <div className="rounded-xl bg-white p-3">
+                                        <p className="text-xs font-medium text-slate-500">
+                                          Follow-up completed
+                                        </p>
+                                        <p className="mt-1 text-2xl font-extrabold text-slate-900">
+                                          {
+                                            pulse.recoveryStats
+                                              .followUpCompleted
+                                          }
+                                        </p>
+                                      </div>
+
+                                      <div className="rounded-xl bg-white p-3">
+                                        <p className="text-xs font-medium text-slate-500">
+                                          Recovered
+                                        </p>
+                                        <p className="mt-1 text-2xl font-extrabold text-emerald-700">
+                                          {pulse.recoveryStats.recovered}
+                                        </p>
+                                      </div>
+
+                                      <div className="rounded-xl bg-white p-3">
+                                        <p className="text-xs font-medium text-slate-500">
+                                          Still incorrect
+                                        </p>
+                                        <p className="mt-1 text-2xl font-extrabold text-rose-700">
+                                          {pulse.recoveryStats.stillIncorrect}
+                                        </p>
+                                      </div>
+
+                                      <div className="rounded-xl bg-white p-3">
+                                        <p className="text-xs font-medium text-slate-500">
+                                          Not rechecked
+                                        </p>
+                                        <p className="mt-1 text-2xl font-extrabold text-amber-700">
+                                          {pulse.recoveryStats.notRechecked}
+                                        </p>
+                                      </div>
+                                    </div>
+
+                                    {pulse.recoveryStats.recoveryPercentage !==
+                                    null ? (
+                                      <p className="mt-4 text-sm leading-6 text-slate-600">
+                                        <strong className="text-emerald-800">
+                                          {pulse.recoveryStats.recovered} out of{" "}
+                                          {
+                                            pulse.recoveryStats
+                                              .followUpCompleted
+                                          }
+                                        </strong>{" "}
+                                        students who completed the follow-up
+                                        answered correctly. Students who did not
+                                        complete it are excluded from the
+                                        recovery rate.
+                                      </p>
+                                    ) : (
+                                      <p className="mt-4 text-sm text-slate-600">
+                                        Waiting for students from the original
+                                        cohort to complete the follow-up
+                                        Knowledge Check.
+                                      </p>
+                                    )}
+                                  </>
+                                )}
+                              </section>
+                            )}
                             {/* Answer distribution per option */}
                             {pulse.mode === "knowledge_check" &&
                               pulse.answerDistribution && (
@@ -2154,89 +2686,469 @@ export default function Home() {
                                   </p>
 
                                   <div className="mt-4 space-y-4">
-                                    {pulse.answerDistribution.map((option) => (
-                                      <div
-                                        key={option.id}
-                                        className="rounded-xl bg-slate-50 p-4"
-                                      >
-                                        <div className="flex flex-wrap items-start justify-between gap-3">
-                                          <div className="min-w-0 flex-1">
-                                            <div className="flex flex-wrap items-center gap-2">
-                                              <span className="rounded-lg bg-white px-2.5 py-1 text-xs font-bold text-slate-600 ring-1 ring-slate-200">
-                                                Option {option.id}
-                                              </span>
+                                    {pulse.answerDistribution.map((option) => {
+                                      const correctAnswer =
+                                        pulse.answerOptions?.find(
+                                          (answer) =>
+                                            answer.id === pulse.correctOptionId,
+                                        )?.text ?? "";
 
-                                              {option.isCorrect && (
-                                                <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-bold text-emerald-800">
-                                                  Correct answer ✓
+                                      const suggestions =
+                                        !option.isCorrect &&
+                                        option.confidentIncorrectCount > 0 &&
+                                        correctAnswer
+                                          ? buildInterventionSuggestions({
+                                              question: pulse.question,
+                                              wrongAnswer: option.text,
+                                              correctAnswer,
+                                              misconception:
+                                                option.misconception,
+                                            })
+                                          : [];
+
+                                      return (
+                                        <div
+                                          key={option.id}
+                                          className="rounded-xl bg-slate-50 p-4"
+                                        >
+                                          <div className="flex flex-wrap items-start justify-between gap-3">
+                                            <div className="min-w-0 flex-1">
+                                              <div className="flex flex-wrap items-center gap-2">
+                                                <span className="rounded-lg bg-white px-2.5 py-1 text-xs font-bold text-slate-600 ring-1 ring-slate-200">
+                                                  Option {option.id}
                                                 </span>
-                                              )}
 
-                                              {!option.isCorrect &&
-                                                option.confidentIncorrectCount >
-                                                  0 && (
-                                                  <span className="rounded-full bg-rose-100 px-2.5 py-1 text-xs font-bold text-rose-800">
-                                                    {
-                                                      option.confidentIncorrectCount
-                                                    }{" "}
-                                                    confidently incorrect
+                                                {option.isCorrect && (
+                                                  <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-bold text-emerald-800">
+                                                    Correct answer ✓
                                                   </span>
+                                                )}
+
+                                                {!option.isCorrect &&
+                                                  option.confidentIncorrectCount >
+                                                    0 && (
+                                                    <span className="rounded-full bg-rose-100 px-2.5 py-1 text-xs font-bold text-rose-800">
+                                                      {
+                                                        option.confidentIncorrectCount
+                                                      }{" "}
+                                                      confidently incorrect
+                                                    </span>
+                                                  )}
+                                              </div>
+
+                                              <p className="mt-2 text-sm font-semibold leading-6 text-slate-800">
+                                                {option.text}
+                                              </p>
+
+                                              {option.misconception &&
+                                                !option.isCorrect && (
+                                                  <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3">
+                                                    <p className="text-xs font-bold text-amber-800">
+                                                      Possible misconception
+                                                    </p>
+                                                    <p className="mt-1 text-sm leading-5 text-amber-900">
+                                                      {option.misconception}
+                                                    </p>
+                                                  </div>
                                                 )}
                                             </div>
 
-                                            <p className="mt-2 text-sm font-semibold leading-6 text-slate-800">
-                                              {option.text}
-                                            </p>
+                                            <div className="shrink-0 text-right">
+                                              <p className="text-2xl font-extrabold text-slate-900">
+                                                {option.count}
+                                              </p>
+                                              <p className="text-xs font-semibold text-slate-500">
+                                                {option.percentage}%
+                                              </p>
+                                            </div>
                                           </div>
 
-                                          <div className="shrink-0 text-right">
-                                            <p className="text-2xl font-extrabold text-slate-900">
-                                              {option.count}
-                                            </p>
-
-                                            <p className="text-xs font-semibold text-slate-500">
-                                              {option.percentage}%
-                                            </p>
-                                          </div>
-                                        </div>
-
-                                        <div
-                                          className="mt-3 h-2.5 overflow-hidden rounded-full bg-slate-200"
-                                          role="progressbar"
-                                          aria-label={`Option ${option.id} selections`}
-                                          aria-valuenow={option.percentage}
-                                          aria-valuemin={0}
-                                          aria-valuemax={100}
-                                        >
                                           <div
-                                            className={`h-full rounded-full transition-all duration-500 ${
-                                              option.isCorrect
-                                                ? "bg-emerald-500"
-                                                : "bg-indigo-500"
-                                            }`}
-                                            style={{
-                                              width: `${option.percentage}%`,
-                                            }}
-                                          />
-                                        </div>
+                                            className="mt-3 h-2.5 overflow-hidden rounded-full bg-slate-200"
+                                            role="progressbar"
+                                            aria-label={`Option ${option.id} selections`}
+                                            aria-valuenow={option.percentage}
+                                            aria-valuemin={0}
+                                            aria-valuemax={100}
+                                          >
+                                            <div
+                                              className={`h-full rounded-full transition-all duration-500 ${
+                                                option.isCorrect
+                                                  ? "bg-emerald-500"
+                                                  : "bg-indigo-500"
+                                              }`}
+                                              style={{
+                                                width: `${option.percentage}%`,
+                                              }}
+                                            />
+                                          </div>
 
-                                        <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
-                                          <span className="text-xs text-slate-500">
-                                            {option.count}{" "}
-                                            {option.count === 1
-                                              ? "student"
-                                              : "students"}{" "}
-                                            selected
-                                          </span>
+                                          <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+                                            <span className="text-xs text-slate-500">
+                                              {option.count}{" "}
+                                              {option.count === 1
+                                                ? "student"
+                                                : "students"}{" "}
+                                              selected
+                                            </span>
 
-                                          <span className="text-xs font-semibold text-slate-600">
-                                            {option.averageConfidence !== null
-                                              ? `Avg confidence: ${option.averageConfidence}/5`
-                                              : "No responses yet"}
-                                          </span>
+                                            <span className="text-xs font-semibold text-slate-600">
+                                              {option.averageConfidence !== null
+                                                ? `Avg confidence: ${option.averageConfidence}/5`
+                                                : "No responses yet"}
+                                            </span>
+                                          </div>
+
+                                          {suggestions.length > 0 && (
+                                            <details className="mt-4 overflow-hidden rounded-xl border border-indigo-100 bg-white">
+                                              <summary className="flex cursor-pointer list-none items-center justify-between gap-3 p-4 text-sm font-bold text-indigo-800 transition hover:bg-indigo-50">
+                                                <span>
+                                                  <span aria-hidden="true">
+                                                    💡{" "}
+                                                  </span>
+                                                  See {suggestions.length}{" "}
+                                                  activity ideas
+                                                </span>
+                                                <span aria-hidden="true">
+                                                  ⌄
+                                                </span>
+                                              </summary>
+
+                                              <div className="border-t border-indigo-100 p-4">
+                                                {suggestions[0]?.notice && (
+                                                  <p className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm leading-5 text-amber-900">
+                                                    {suggestions[0].notice}
+                                                  </p>
+                                                )}
+
+                                                <div className="grid gap-3 sm:grid-cols-2">
+                                                  {suggestions.map(
+                                                    (suggestion) => {
+                                                      const isSelected =
+                                                        interventionDraft !==
+                                                          null &&
+                                                        interventionDraft.pulseId ===
+                                                          pulse.id &&
+                                                        interventionDraft.answerOptionId ===
+                                                          option.id &&
+                                                        interventionDraft.title ===
+                                                          suggestion.title;
+
+                                                      return (
+                                                        <div
+                                                          key={suggestion.id}
+                                                          className="rounded-xl border border-indigo-100 bg-white p-4"
+                                                        >
+                                                          <h6 className="font-bold text-slate-900">
+                                                            {suggestion.title}
+                                                          </h6>
+
+                                                          <p className="mt-2 text-sm leading-6 text-slate-600">
+                                                            {suggestion.prompt}
+                                                          </p>
+
+                                                          {suggestion.requiresTeacherInput && (
+                                                            <div className="mt-3 rounded-lg bg-amber-50 p-3">
+                                                              <p className="text-xs font-bold text-amber-800">
+                                                                {
+                                                                  suggestion.teacherInputLabel
+                                                                }
+                                                              </p>
+                                                              <p className="mt-1 text-xs text-amber-700">
+                                                                {
+                                                                  suggestion.teacherInputPlaceholder
+                                                                }
+                                                              </p>
+                                                            </div>
+                                                          )}
+
+                                                          <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                              setInterventionError(
+                                                                "",
+                                                              );
+                                                              setInterventionMessage(
+                                                                "",
+                                                              );
+
+                                                              setInterventionDraft(
+                                                                {
+                                                                  pulseId:
+                                                                    pulse.id,
+                                                                  answerOptionId:
+                                                                    option.id,
+                                                                  title:
+                                                                    suggestion.title,
+                                                                  instructions:
+                                                                    suggestion.prompt,
+                                                                  teacherMaterial:
+                                                                    "",
+                                                                  requiresTeacherInput:
+                                                                    suggestion.requiresTeacherInput,
+                                                                  ...(suggestion.teacherInputLabel
+                                                                    ? {
+                                                                        teacherInputLabel:
+                                                                          suggestion.teacherInputLabel,
+                                                                      }
+                                                                    : {}),
+                                                                  ...(suggestion.teacherInputPlaceholder
+                                                                    ? {
+                                                                        teacherInputPlaceholder:
+                                                                          suggestion.teacherInputPlaceholder,
+                                                                      }
+                                                                    : {}),
+                                                                },
+                                                              );
+                                                            }}
+                                                            className="mt-4 w-full rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-2.5 text-sm font-bold text-indigo-700 transition hover:bg-indigo-100"
+                                                          >
+                                                            {isSelected
+                                                              ? "Editing this activity"
+                                                              : "Use this activity →"}
+                                                          </button>
+
+                                                          {isSelected &&
+                                                            interventionDraft && (
+                                                              <div className="mt-5 border-t border-slate-200 pt-5">
+                                                                <h6 className="text-base font-extrabold text-slate-900">
+                                                                  Edit your
+                                                                  activity
+                                                                </h6>
+
+                                                                <p className="mt-1 text-xs leading-5 text-slate-500">
+                                                                  Customize the
+                                                                  activity
+                                                                  before showing
+                                                                  it to your
+                                                                  students.
+                                                                </p>
+
+                                                                {/* Activity title */}
+                                                                <div className="mt-4">
+                                                                  <label
+                                                                    htmlFor={`intervention-title-${suggestion.id}`}
+                                                                    className="mb-1.5 block text-sm font-semibold text-slate-700"
+                                                                  >
+                                                                    Activity
+                                                                    title
+                                                                  </label>
+
+                                                                  <input
+                                                                    id={`intervention-title-${suggestion.id}`}
+                                                                    type="text"
+                                                                    value={
+                                                                      interventionDraft.title
+                                                                    }
+                                                                    maxLength={
+                                                                      100
+                                                                    }
+                                                                    onChange={(
+                                                                      event,
+                                                                    ) =>
+                                                                      setInterventionDraft(
+                                                                        (
+                                                                          current,
+                                                                        ) =>
+                                                                          current
+                                                                            ? {
+                                                                                ...current,
+                                                                                title:
+                                                                                  event
+                                                                                    .target
+                                                                                    .value,
+                                                                              }
+                                                                            : null,
+                                                                      )
+                                                                    }
+                                                                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100"
+                                                                  />
+                                                                </div>
+
+                                                                {/* Activity instructions */}
+                                                                <div className="mt-4">
+                                                                  <label
+                                                                    htmlFor={`intervention-instructions-${suggestion.id}`}
+                                                                    className="mb-1.5 block text-sm font-semibold text-slate-700"
+                                                                  >
+                                                                    Instructions
+                                                                    for students
+                                                                  </label>
+
+                                                                  <textarea
+                                                                    id={`intervention-instructions-${suggestion.id}`}
+                                                                    value={
+                                                                      interventionDraft.instructions
+                                                                    }
+                                                                    maxLength={
+                                                                      1000
+                                                                    }
+                                                                    rows={4}
+                                                                    onChange={(
+                                                                      event,
+                                                                    ) =>
+                                                                      setInterventionDraft(
+                                                                        (
+                                                                          current,
+                                                                        ) =>
+                                                                          current
+                                                                            ? {
+                                                                                ...current,
+                                                                                instructions:
+                                                                                  event
+                                                                                    .target
+                                                                                    .value,
+                                                                              }
+                                                                            : null,
+                                                                      )
+                                                                    }
+                                                                    className="w-full resize-y rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm leading-6 outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100"
+                                                                  />
+                                                                </div>
+
+                                                                {/* Code or supporting material */}
+                                                                <div className="mt-4">
+                                                                  <label
+                                                                    htmlFor={`intervention-material-${suggestion.id}`}
+                                                                    className="mb-1.5 block text-sm font-semibold text-slate-700"
+                                                                  >
+                                                                    {interventionDraft.requiresTeacherInput
+                                                                      ? interventionDraft.teacherInputLabel
+                                                                      : "Supporting material (optional)"}
+                                                                  </label>
+
+                                                                  <textarea
+                                                                    id={`intervention-material-${suggestion.id}`}
+                                                                    value={
+                                                                      interventionDraft.teacherMaterial
+                                                                    }
+                                                                    onChange={(
+                                                                      event,
+                                                                    ) =>
+                                                                      setInterventionDraft(
+                                                                        (
+                                                                          current,
+                                                                        ) =>
+                                                                          current
+                                                                            ? {
+                                                                                ...current,
+                                                                                teacherMaterial:
+                                                                                  event
+                                                                                    .target
+                                                                                    .value,
+                                                                              }
+                                                                            : null,
+                                                                      )
+                                                                    }
+                                                                    placeholder={
+                                                                      interventionDraft.teacherInputPlaceholder ??
+                                                                      "Add an example, code snippet or other supporting material..."
+                                                                    }
+                                                                    maxLength={
+                                                                      5000
+                                                                    }
+                                                                    rows={5}
+                                                                    required={
+                                                                      interventionDraft.requiresTeacherInput
+                                                                    }
+                                                                    className="w-full resize-y rounded-lg border border-slate-200 bg-white px-3 py-2.5 font-mono text-sm leading-6 outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100"
+                                                                  />
+
+                                                                  <p className="mt-1 text-right text-xs text-slate-400">
+                                                                    {
+                                                                      interventionDraft
+                                                                        .teacherMaterial
+                                                                        .length
+                                                                    }
+                                                                    /5000
+                                                                  </p>
+                                                                </div>
+
+                                                                {/* Live student preview */}
+                                                                <div className="mt-5 rounded-xl border border-indigo-200 bg-indigo-50/60 p-4">
+                                                                  <div className="flex items-center gap-2">
+                                                                    <span aria-hidden="true">
+                                                                      👁️
+                                                                    </span>
+                                                                    <h6 className="text-sm font-bold text-indigo-950">
+                                                                      Student
+                                                                      preview
+                                                                    </h6>
+                                                                  </div>
+
+                                                                  <h3 className="mt-4 text-lg font-extrabold text-slate-900">
+                                                                    {interventionDraft.title ||
+                                                                      "Untitled activity"}
+                                                                  </h3>
+
+                                                                  <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-700">
+                                                                    {interventionDraft.instructions ||
+                                                                      "No instructions yet."}
+                                                                  </p>
+
+                                                                  {interventionDraft.teacherMaterial.trim() && (
+                                                                    <div className="mt-4 rounded-lg bg-slate-950 p-3">
+                                                                      <pre className="overflow-x-auto whitespace-pre-wrap break-words text-sm leading-6 text-white">
+                                                                        {
+                                                                          interventionDraft.teacherMaterial
+                                                                        }
+                                                                      </pre>
+                                                                    </div>
+                                                                  )}
+                                                                </div>
+
+                                                                {/* Editor actions */}
+                                                                <div className="mt-5 flex flex-wrap gap-3">
+                                                                  <button
+                                                                    type="button"
+                                                                    onClick={() => {
+                                                                      setInterventionDraft(
+                                                                        null,
+                                                                      );
+                                                                      setInterventionError(
+                                                                        "",
+                                                                      );
+                                                                    }}
+                                                                    disabled={
+                                                                      launchingIntervention
+                                                                    }
+                                                                    className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 disabled:opacity-50"
+                                                                  >
+                                                                    Cancel
+                                                                  </button>
+
+                                                                  <button
+                                                                    type="button"
+                                                                    onClick={
+                                                                      handleLaunchIntervention
+                                                                    }
+                                                                    disabled={
+                                                                      launchingIntervention ||
+                                                                      !interventionDraft.title.trim() ||
+                                                                      !interventionDraft.instructions.trim() ||
+                                                                      (interventionDraft.requiresTeacherInput &&
+                                                                        !interventionDraft.teacherMaterial.trim())
+                                                                    }
+                                                                    className="flex-1 rounded-xl bg-indigo-600 px-4 py-3 text-sm font-bold text-white shadow-sm transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+                                                                  >
+                                                                    {launchingIntervention
+                                                                      ? "Launching..."
+                                                                      : "Launch to students →"}
+                                                                  </button>
+                                                                </div>
+                                                              </div>
+                                                            )}
+                                                        </div>
+                                                      );
+                                                    },
+                                                  )}
+                                                </div>
+                                              </div>
+                                            </details>
+                                          )}
                                         </div>
-                                      </div>
-                                    ))}
+                                      );
+                                    })}
                                   </div>
                                 </div>
                               )}

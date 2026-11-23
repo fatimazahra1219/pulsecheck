@@ -17,9 +17,11 @@ type PulseRecord = {
   concept: string;
   question: string;
   mode?: "rating" | "knowledge_check";
+  recheckOfPulseId?: string;
   answerOptions?: Array<{
     id: string;
     text: string;
+    misconception?: string;
   }>;
   correctOptionId?: string;
   explanation?: string;
@@ -32,6 +34,17 @@ type PulseRecord = {
     selectedOptionId?: string;
     isCorrect?: boolean;
   }>;
+  interventions?: {
+    _id: { toString: () => string };
+    title: string;
+    instructions: string;
+    teacherMaterial?: string;
+    isActive: boolean;
+    activityResponses?: Array<{
+      answer: string;
+      submittedAt?: Date;
+    }>;
+  }[];
 };
 
 type ScoreKey = 1 | 2 | 3 | 4 | 5;
@@ -119,7 +132,34 @@ export async function POST(request: Request, { params }: RouteContext) {
       );
     }
 
-    let answerOptions: Array<{ id: string; text: string }> = [];
+    const recheckOfPulseId =
+      typeof payload.recheckOfPulseId === "string"
+        ? payload.recheckOfPulseId.trim()
+        : "";
+
+    if (
+      payload.recheckOfPulseId !== undefined &&
+      (typeof payload.recheckOfPulseId !== "string" ||
+        !/^[a-fA-F0-9]{24}$/.test(recheckOfPulseId))
+    ) {
+      return NextResponse.json(
+        { error: "Invalid original Pulse ID." },
+        { status: 400 },
+      );
+    }
+
+    if (recheckOfPulseId && mode !== "knowledge_check") {
+      return NextResponse.json(
+        { error: "A follow-up must be a Knowledge Check." },
+        { status: 400 },
+      );
+    }
+
+    let answerOptions: Array<{
+      id: string;
+      text: string;
+      misconception?: string;
+    }> = [];
     let correctOptionId: string | undefined;
     let explanation: string | undefined;
 
@@ -154,7 +194,10 @@ export async function POST(request: Request, { params }: RouteContext) {
           item.id.trim().length <= 20 &&
           typeof item.text === "string" &&
           item.text.trim().length > 0 &&
-          item.text.trim().length <= 200
+          item.text.trim().length <= 200 &&
+          (item.misconception === undefined ||
+            (typeof item.misconception === "string" &&
+              item.misconception.trim().length <= 300))
         );
       });
 
@@ -166,9 +209,12 @@ export async function POST(request: Request, { params }: RouteContext) {
       }
 
       answerOptions = payload.answerOptions.map(
-        (option: { id: string; text: string }) => ({
+        (option: { id: string; text: string; misconception?: string }) => ({
           id: option.id.trim(),
           text: option.text.trim(),
+          ...(option.misconception?.trim()
+            ? { misconception: option.misconception.trim() }
+            : {}),
         }),
       );
 
@@ -221,6 +267,22 @@ export async function POST(request: Request, { params }: RouteContext) {
       );
     }
 
+    if (recheckOfPulseId) {
+      const originalPulse = session.pulses.find(
+        (pulse: PulseRecord) => pulse._id.toString() === recheckOfPulseId,
+      );
+
+      if (
+        !originalPulse ||
+        (originalPulse.mode ?? "rating") !== "knowledge_check"
+      ) {
+        return NextResponse.json(
+          { error: "The original Knowledge Check was not found." },
+          { status: 404 },
+        );
+      }
+    }
+
     // Deactivate the previous Pulse, if one exists.
     for (const pulse of session.pulses) {
       pulse.isActive = false;
@@ -231,6 +293,7 @@ export async function POST(request: Request, { params }: RouteContext) {
       concept,
       question,
       mode,
+      ...(recheckOfPulseId ? { recheckOfPulseId } : {}),
       ...(mode === "knowledge_check"
         ? {
             answerOptions,
@@ -309,6 +372,71 @@ export async function GET(request: Request, { params }: RouteContext) {
     }
 
     const pulseRecords = session.pulses as unknown as PulseRecord[];
+
+    // Calculate recovery for a follow-up Knowledge Check.
+    const buildRecoveryStats = (followUpPulse: PulseRecord) => {
+      if (!followUpPulse.recheckOfPulseId) {
+        return null;
+      }
+
+      // Find the original Knowledge Check.
+      const originalPulse = pulseRecords.find(
+        (candidate: PulseRecord) =>
+          candidate._id.toString() === followUpPulse.recheckOfPulseId,
+      );
+
+      if (
+        !originalPulse ||
+        (originalPulse.mode ?? "rating") !== "knowledge_check"
+      ) {
+        return null;
+      }
+
+      // Identify students who were confidently incorrect originally.
+      const originalCohortIds = new Set(
+        originalPulse.responses
+          .filter(
+            (response) =>
+              response.score >= 4 &&
+              response.score <= 5 &&
+              response.isCorrect === false &&
+              response.anonymousId.trim().length > 0,
+          )
+          .map((response) => response.anonymousId),
+      );
+
+      // Match their follow-up answers using their anonymous browser IDs.
+      const followUpOutcomes = new Map<string, boolean>();
+
+      for (const response of followUpPulse.responses) {
+        if (
+          originalCohortIds.has(response.anonymousId) &&
+          typeof response.isCorrect === "boolean"
+        ) {
+          followUpOutcomes.set(response.anonymousId, response.isCorrect);
+        }
+      }
+
+      const followUpCompleted = followUpOutcomes.size;
+
+      const recovered = Array.from(followUpOutcomes.values()).filter(
+        (isCorrect) => isCorrect,
+      ).length;
+
+      return {
+        originalPulseId: originalPulse._id.toString(),
+        originalConcept: originalPulse.concept,
+        originalCohortSize: originalCohortIds.size,
+        followUpCompleted,
+        recovered,
+        stillIncorrect: followUpCompleted - recovered,
+        notRechecked: originalCohortIds.size - followUpCompleted,
+        recoveryPercentage:
+          followUpCompleted > 0
+            ? Math.round((recovered / followUpCompleted) * 100)
+            : null,
+      };
+    };
 
     const pulses = pulseRecords.map((pulse) => {
       // Count responses for each score.
@@ -401,10 +529,9 @@ export async function GET(request: Request, { params }: RouteContext) {
 
             const count = optionResponses.length;
             // Count students who selected this option confidently and were wrong.
-const confidentIncorrectCount = optionResponses.filter(
-  (response) =>
-    response.score >= 4 && response.isCorrect === false,
-).length;
+            const confidentIncorrectCount = optionResponses.filter(
+              (response) => response.score >= 4 && response.isCorrect === false,
+            ).length;
 
             const averageConfidence =
               count > 0
@@ -421,6 +548,7 @@ const confidentIncorrectCount = optionResponses.filter(
             return {
               id: option.id,
               text: option.text,
+              misconception: option.misconception ?? "",
               isCorrect: option.id === pulse.correctOptionId,
               count,
               confidentIncorrectCount,
@@ -443,6 +571,7 @@ const confidentIncorrectCount = optionResponses.filter(
         concept: pulse.concept,
         question: pulse.question,
         mode: pulse.mode ?? "rating",
+        recheckOfPulseId: pulse.recheckOfPulseId ?? null,
         ...(pulse.mode === "knowledge_check"
           ? {
               answerOptions: pulse.answerOptions ?? [],
@@ -451,7 +580,30 @@ const confidentIncorrectCount = optionResponses.filter(
             }
           : {}),
         knowledgeCheckStats,
+        recoveryStats: buildRecoveryStats(pulse),
         answerDistribution,
+        activeIntervention:
+          (pulse.interventions ?? [])
+            .filter((intervention) => intervention.isActive)
+            .map((intervention) => ({
+              id: intervention._id.toString(),
+              title: intervention.title,
+              instructions: intervention.instructions,
+              teacherMaterial: intervention.teacherMaterial ?? "",
+            }))[0] ?? null,
+        interventions: (pulse.interventions ?? []).map((intervention) => ({
+          id: intervention._id.toString(),
+          title: intervention.title,
+          instructions: intervention.instructions,
+          teacherMaterial: intervention.teacherMaterial ?? "",
+          isActive: intervention.isActive,
+          activityResponses: (intervention.activityResponses ?? []).map(
+            (response) => ({
+              answer: response.answer,
+              submittedAt: response.submittedAt ?? null,
+            }),
+          ),
+        })),
         isActive: pulse.isActive,
         isPaused: Boolean(pulse.isPaused),
         totalResponses,

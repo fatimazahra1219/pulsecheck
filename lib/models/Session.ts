@@ -10,6 +10,12 @@ const AnswerOptionSchema = new Schema(
       type: String,
       required: true,
     },
+    misconception: {
+      type: String,
+      required: false,
+      trim: true,
+      maxlength: 300,
+    },
   },
   { _id: false },
 );
@@ -42,6 +48,68 @@ const ResponseSchema = new Schema(
   { _id: false },
 );
 
+const InterventionActivityResponseSchema = new Schema(
+  {
+    anonymousId: {
+      type: String,
+      required: true,
+      trim: true,
+      maxlength: 100,
+    },
+    answer: {
+      type: String,
+      required: true,
+      trim: true,
+      maxlength: 3000,
+    },
+    submittedAt: {
+      type: Date,
+      default: Date.now,
+    },
+  },
+  { _id: false },
+);
+
+const InterventionSchema = new Schema(
+  {
+    title: {
+      type: String,
+      required: true,
+      trim: true,
+      maxlength: 100,
+    },
+    instructions: {
+      type: String,
+      required: true,
+      trim: true,
+      maxlength: 1000,
+    },
+    teacherMaterial: {
+      type: String,
+      default: "",
+      trim: true,
+      maxlength: 5000,
+    },
+    activityResponses: {
+      type: [InterventionActivityResponseSchema],
+      default: [],
+    },
+    isActive: {
+      type: Boolean,
+      default: true,
+    },
+    createdAt: {
+      type: Date,
+      default: Date.now,
+    },
+    completedAt: {
+      type: Date,
+      required: false,
+    },
+  },
+  { _id: true },
+);
+
 const PulseSchema = new Schema(
   {
     concept: {
@@ -56,6 +124,12 @@ const PulseSchema = new Schema(
       type: String,
       enum: ["rating", "knowledge_check"],
       default: "rating",
+    },
+    recheckOfPulseId: {
+      type: String,
+      required: false,
+      trim: true,
+      maxlength: 24,
     },
     answerOptions: {
       type: [AnswerOptionSchema],
@@ -85,6 +159,10 @@ const PulseSchema = new Schema(
     },
     responses: {
       type: [ResponseSchema],
+      default: [],
+    },
+    interventions: {
+      type: [InterventionSchema],
       default: [],
     },
   },

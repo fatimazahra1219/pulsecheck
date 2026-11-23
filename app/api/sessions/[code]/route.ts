@@ -17,6 +17,15 @@ type ActivePulseRecord = {
   concept: string;
   question: string;
   mode?: "rating" | "knowledge_check";
+  interventions?: Array<{
+    _id: {
+      toString(): string;
+    };
+    title: string;
+    instructions: string;
+    teacherMaterial?: string;
+    isActive: boolean;
+  }>;
   answerOptions?: Array<{
     id: string;
     text: string;
@@ -75,28 +84,27 @@ export async function GET(request: Request, { params }: RouteContext) {
 
     // Find the latest completed Knowledge Check answered by this student.
     // Find the most recently created Pulse in the classroom.
-const latestPulse = [...pulseRecords].sort(
-  (a, b) =>
-    new Date(b.createdAt).getTime() -
-    new Date(a.createdAt).getTime(),
-)[0];
+    const latestPulse = [...pulseRecords].sort(
+      (a, b) =>
+        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+    )[0];
 
-// Feedback belongs only to the most recent Pulse.
-// It is available only after that Pulse has ended.
-const completedPulse =
-  validAnonymousId &&
-  latestPulse &&
-  !latestPulse.isActive &&
-  latestPulse.mode === "knowledge_check"
-    ? latestPulse
-    : undefined;
+    // Feedback belongs only to the most recent Pulse.
+    // It is available only after that Pulse has ended.
+    const completedPulse =
+      validAnonymousId &&
+      latestPulse &&
+      !latestPulse.isActive &&
+      latestPulse.mode === "knowledge_check"
+        ? latestPulse
+        : undefined;
 
-// Find this student's response to that specific Pulse.
-const studentResponse = completedPulse?.responses.find(
-  (response) =>
-    response.anonymousId === anonymousId &&
-    typeof response.isCorrect === "boolean",
-);
+    // Find this student's response to that specific Pulse.
+    const studentResponse = completedPulse?.responses.find(
+      (response) =>
+        response.anonymousId === anonymousId &&
+        typeof response.isCorrect === "boolean",
+    );
 
     // Release feedback only after completion and only to a student who answered.
     const feedback =
@@ -135,9 +143,19 @@ const studentResponse = completedPulse?.responses.find(
                 ? (activePulse.answerOptions ?? [])
                 : [],
             isPaused: Boolean(activePulse.isPaused),
+
+            activeIntervention:
+              (activePulse.interventions ?? [])
+                .filter((intervention) => intervention.isActive)
+                .map((intervention) => ({
+                  id: intervention._id.toString(),
+                  title: intervention.title,
+                  instructions: intervention.instructions,
+                  teacherMaterial: intervention.teacherMaterial ?? "",
+                }))[0] ?? null,
           }
         : null,
-        feedback,
+      feedback,
     });
   } catch (error) {
     console.error("Session lookup failed:", error);
